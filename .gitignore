@@ -1,0 +1,47 @@
+# Environment and credentials
+.env
+*.env
+credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Database files (contain trade data)
+*.db
+*.db-journal
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Deploy scripts (contain server-specific paths)
+deploy_*.sh
+patch_*.sh
+
+# Personal documents
+*.docx
+*.pdf
+*.pptx
+
+# Session/handoff files
+handoff*.md
+*handoff*.md
+daily-log-*.html
