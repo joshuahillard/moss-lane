@@ -80,6 +80,47 @@ This is the core principle: you do not need to predict the market. You need to e
 - Filter cascade source: `lazarus.py`, CFG dict lines 108–166
 
 **Open Items:**
-- Epoch gate T-vs-space timestamp format bug (discovered during this autopsy, fix pending)
+- ~~Epoch gate T-vs-space timestamp format bug (discovered during this autopsy, fix pending)~~ **RESOLVED** — see below
 - Scan-to-gate latency not instrumented (only gate-to-execute measured at ~1ms)
 - Trade count: 3/20 toward Stoic Gate threshold — no logic changes until 20 reached
+
+---
+
+## Addendum: Epoch Gate Data Leak — Discovery & Fix
+
+**Date:** 2026-03-30 12:17 UTC
+**Severity:** HIGH — affected data integrity across learning engine and self-regulation
+**Status:** RESOLVED
+
+### The Bug
+
+During the trade autopsy, the QA persona flagged that a `WHERE timestamp >= '2026-03-29 17:44:00'` query returned 5 trades instead of the expected 3. Two pre-epoch trades (ai at 03:43 UTC, BRUH at 06:10 UTC) leaked through — both were stale_timeout losers from pre-v3.1 code.
+
+### Root Cause
+
+A timestamp format mismatch between the database and the epoch string. The DB writes ISO 8601 timestamps with a `T` separator (`2026-03-29T03:43:37`), but the epoch was stored with a space separator (`2026-03-29 17:44:00`). In ASCII, `T` (0x54) is greater than space (0x20), so SQLite string comparison evaluated `2026-03-29T03:43:37 >= 2026-03-29 17:44:00` as TRUE — even though 03:43 is 14 hours *before* the 17:44 epoch.
+
+This is a textbook example of implicit type coercion in string-based datetime comparisons. SQLite has no native datetime type; it relies on consistent string formatting for correct lexicographic ordering.
+
+### Impact
+
+The learning engine (`learning_engine.py`) and self-regulation module (`self_regulation.py`) were both evaluating pre-v3.1 trades in their decision windows. Both leaked trades were stale_timeout exits with -5.0% PnL from the old 0.95 stale penalty — artificially depressing the system's performance metrics and potentially influencing regime evaluations.
+
+The paper balance calculation in `lazarus.py` (2 occurrences) was also affected, summing pre-epoch PnL into the running virtual balance.
+
+### The Fix
+
+Surgical string replacement across 3 files, 4 locations:
+
+| File | Line | Old Value | New Value |
+|------|------|-----------|-----------|
+| `learning_engine.py` | 21 | `V3_EPOCH = "2026-03-29 17:44:00"` | `V3_EPOCH = "2026-03-29T17:44:00"` |
+| `self_regulation.py` | 27 | `V3_EPOCH = "2026-03-29 17:44:00"` | `V3_EPOCH = "2026-03-29T17:44:00"` |
+| `lazarus.py` | 1190 | `timestamp >= '2026-03-29 17:44:00'` | `timestamp >= '2026-03-29T17:44:00'` |
+| `lazarus.py` | 1206 | `timestamp >= '2026-03-29 17:44:00'` | `timestamp >= '2026-03-29T17:44:00'` |
+
+All 3 files passed `py_compile` verification. Service restarted cleanly at 12:17 UTC.
+
+### The TPM Lesson
+
+This bug was invisible in normal operation — Lazarus kept trading, kept logging, kept running. It only surfaced under forensic analysis when the QA persona enforced epoch gating on the raw trade data and counted discrepancies. The fix was a 4-character change (`T` replacing a space) in 4 locations, but the diagnostic process that found it — cross-referencing SQL output against log timestamps, understanding ASCII ordering in SQLite string comparisons — is the kind of systems thinking that separates "it works" from "it works correctly." In production systems at scale, these silent data integrity bugs are the ones that compound into catastrophic drift.
