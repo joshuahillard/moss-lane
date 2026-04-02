@@ -1,0 +1,23 @@
+# Secrets — NEVER ship these in an image
+.env
+*.env
+
+# Runtime data — mounted as volumes, not baked in
+logs/
+*.db
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Backups and editor junk
+backups/
+*.swp
+*.swo
+*~
+
+# Docker-in-Docker noise
+Dockerfile
+docker-compose.yml
+.dockerignore
