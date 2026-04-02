@@ -1,0 +1,46 @@
+{
+  "model_file": "lazarus_model.json",
+  "features": [
+    "score",
+    "chg_pct",
+    "mc",
+    "liq",
+    "hourly",
+    "hour_utc",
+    "day_of_week",
+    "smart_money_confirmed",
+    "rug_risk_enc",
+    "source_enc",
+    "liq_mc_ratio",
+    "vol_liq_ratio",
+    "trading_session"
+  ],
+  "target": "profitable",
+  "metrics": {
+    "accuracy": 0.7407407407407407,
+    "precision": 0.5,
+    "recall": 0.42857142857142855,
+    "f1": 0.46153846153846156,
+    "train_size": 108,
+    "test_size": 27,
+    "win_rate_actual": 0.25925925925925924,
+    "cv_f1_mean": 0.29392385392385395,
+    "cv_f1_std": 0.2049795698929543
+  },
+  "feature_importance": {
+    "liq_mc_ratio": 0.17904482781887054,
+    "hourly": 0.14451727271080017,
+    "vol_liq_ratio": 0.11928874254226685,
+    "day_of_week": 0.10717124491930008,
+    "liq": 0.10553562641143799,
+    "chg_pct": 0.09461265802383423,
+    "score": 0.09168113768100739,
+    "hour_utc": 0.0810231864452362,
+    "mc": 0.07712521404027939,
+    "smart_money_confirmed": 0.0,
+    "rug_risk_enc": 0.0,
+    "source_enc": 0.0,
+    "trading_session": 0.0
+  },
+  "training_note": "XGBoost binary classifier for trade profitability prediction"
+}

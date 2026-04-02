@@ -1,0 +1,69 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# Lazarus Trading Bot — Docker Compose
+#
+# HOW TO USE:
+#   1. Place your .env file in the same directory as this file
+#   2. Run: docker compose up -d
+#   3. Check logs: docker compose logs -f lazarus
+#   4. Stop: docker compose down
+#
+# WHY each decision is documented inline.
+# ══════════════════════════════════════════════════════════════════════════════
+
+services:
+  lazarus:
+    # ── Build from local Dockerfile ──────────────────────────────────────
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: lazarus-bot
+
+    # ── Restart policy ───────────────────────────────────────────────────
+    # "unless-stopped" means:
+    #   - Auto-restart on crash (same as systemd Restart=always on VPS)
+    #   - Stays stopped if YOU manually stop it (docker compose down)
+    #   - Survives Docker daemon restarts / host reboots
+    # This matches the VPS systemd behavior exactly.
+    restart: unless-stopped
+
+    # ── Environment ──────────────────────────────────────────────────────
+    # LAZARUS_ENV tells the bot it's running in Docker (not bare metal).
+    # This lets lazarus.py detect its environment if needed (e.g., log
+    # paths, DB paths, or future Docker-specific behavior).
+    #
+    # WHY NOT env_file? env_file: .env copies secrets into Docker's
+    # internal config store (visible via `docker inspect`). A volume
+    # mount keeps the .env file on the host filesystem only — the
+    # container reads it at runtime but Docker itself never stores it.
+    environment:
+      - LAZARUS_ENV=docker
+
+    # ── Volumes ──────────────────────────────────────────────────────────
+    volumes:
+      # Secrets: mount .env as read-only file inside the container.
+      # The bot's EnvLoader reads from this path at startup.
+      # :ro = read-only — the bot should never write to .env.
+      - ./.env:/app/.env:ro
+
+      # Persistence: lazarus.db + log files survive container restarts.
+      # Without this mount, every `docker compose down` would wipe your
+      # entire trade history. The host ./logs/ directory is the source
+      # of truth — same pattern as /home/solbot/lazarus/logs/ on the VPS.
+      - ./logs:/app/logs
+
+    # ── Resource limits ──────────────────────────────────────────────────
+    # The bot is lightweight — single async loop, no heavy computation.
+    # 512MB RAM and half a CPU core is generous for what it does.
+    # This prevents a memory leak or runaway loop from eating the host.
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+    # ── No ports exposed ─────────────────────────────────────────────────
+    # Lazarus is a background worker. It makes outbound HTTP calls
+    # (DexScreener, Birdeye, Jupiter, RPC) but serves nothing inbound.
+    # Zero attack surface from the network side.
+    # (Dashboard, if added later, would be a separate service.)
