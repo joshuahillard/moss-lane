@@ -43,6 +43,17 @@ import base58
 from solders.keypair import Keypair
 from solders.transaction import VersionedTransaction
 
+# Data integrity validation (5-layer protection)
+try:
+    from data_integrity import (
+        validate_epoch_query, validate_startup_config,
+        check_data_anomalies, V31_EPOCH, PARAM_BOUNDS,
+    )
+    _DI = True
+except ImportError:
+    _DI = False
+    V31_EPOCH = "2026-03-29T17:44:00"
+
 # Optional modules (graceful degradation if missing)
 try:
     from prepump_tracker import PrePumpTracker, FilterCounter, EARLY_ENTRY_FILTERS
@@ -408,6 +419,19 @@ class Database:
         if t[0]:
             mode = "PAPER" if PAPER else "LIVE"
             log.info(f"[{mode}] trades={t[0]} | pnl=${t[1] or 0:.2f} | wins={t[2]} | avg={t[3] or 0:.1f}%")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LAYER 1: SAFE EPOCH QUERY — validates epoch queries before execution
+# ══════════════════════════════════════════════════════════════════════════════
+def safe_epoch_query(db_conn, query, params=None):
+    """Wrapper that validates epoch queries before execution (Layer 1)."""
+    if _DI:
+        query_check = validate_epoch_query(query)
+        if not query_check["valid"]:
+            log.error(f"[QUERY] BLOCKED unsafe epoch query: {query_check['reason']}")
+            raise ValueError(f"Unsafe epoch query: {query_check['reason']}")
+    return db_conn.execute(query, params or [])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1238,6 +1262,33 @@ async def main():
     bridge.set_config(CFG)
     bridge.write_state(force=True)
 
+    # ── Layer 4: Startup assertions — catch config drift before any trades ──
+    if _DI:
+        try:
+            _startup_db = sqlite3.connect(DB_PATH, timeout=5)
+            _bc_rows = _startup_db.execute("SELECT key, value FROM bot_config").fetchall()
+            _dc_rows = _startup_db.execute("SELECT key, value FROM dynamic_config").fetchall()
+            _startup_db.close()
+            _bot_cfg = {k: v for k, v in _bc_rows}
+            _dyn_cfg = {k: v for k, v in _dc_rows}
+            startup_check = validate_startup_config(_bot_cfg, _dyn_cfg, epoch=V31_EPOCH)
+            if not startup_check["valid"]:
+                log.critical(f"[STARTUP] ASSERTION FAILED: {startup_check['reason']}")
+                for fail in startup_check["details"]["checks_failed"]:
+                    log.critical(f"[STARTUP]   FAIL: {fail}")
+                log.critical("[STARTUP] Lazarus will NOT start until this is resolved.")
+                import sys
+                sys.exit(1)
+            log.info(f"[STARTUP] All assertions passed ({len(startup_check['details']['checks_passed'])} checks)")
+            for p in startup_check["details"]["checks_passed"]:
+                log.info(f"[STARTUP]   OK: {p}")
+        except SystemExit:
+            raise
+        except Exception as e:
+            log.warning(f"[STARTUP] Assertion check error (non-fatal): {e}")
+    else:
+        log.warning("[STARTUP] data_integrity not available — skipping startup assertions")
+
     db = Database()
     executor = TradeExecutor(db)
     aggregator = SignalAggregator()
@@ -1365,6 +1416,35 @@ async def main():
                                 pass
                 except Exception as e:
                     log.warning(f"Learning cycle error: {e}")
+
+            # ── Layer 5: Anomaly detection every 20 cycles ──
+            if cycle % 20 == 0 and _DI:
+                try:
+                    _anom_db = sqlite3.connect(DB_PATH, timeout=5)
+                    _recent = _anom_db.execute(
+                        "SELECT symbol, token_address, pnl_pct, pnl_usd, source, "
+                        "timestamp, exit_reason, chg_pct, liq "
+                        "FROM trades WHERE timestamp >= ? AND side='sell' "
+                        "ORDER BY timestamp DESC LIMIT 30",
+                        (V31_EPOCH,)
+                    ).fetchall()
+                    _anom_db.close()
+                    if _recent:
+                        _recent_dicts = [
+                            {"symbol": r[0], "token_address": r[1], "pnl_pct": r[2],
+                             "pnl_usd": r[3], "source": r[4], "timestamp": r[5],
+                             "exit_reason": r[6], "chg_pct": r[7], "liq": r[8]}
+                            for r in _recent
+                        ]
+                        anomaly_check = check_data_anomalies(_recent_dicts, CFG)
+                        if anomaly_check["anomalies"]:
+                            for anomaly in anomaly_check["anomalies"]:
+                                log.warning(f"[ANOMALY] {anomaly['type']}: {anomaly['message']} "
+                                            f"(severity: {anomaly['severity']})")
+                            if anomaly_check["severity"] == "critical":
+                                log.critical(f"[ANOMALY] CRITICAL — {anomaly_check['recommendation']}")
+                except Exception as e:
+                    log.warning(f"[ANOMALY] Check error: {e}")
 
             bridge.heartbeat(balance_usd=bal * get_sol_price(), balance_sol=bal)
             bridge.write_state()
