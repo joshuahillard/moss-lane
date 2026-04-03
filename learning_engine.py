@@ -16,9 +16,19 @@ RULES:
 """
 
 import sqlite3
+import logging
 from datetime import datetime, timezone
 
-V3_EPOCH = "2026-03-28T04:53:00"  # Only learn from v3 trades
+try:
+    from data_integrity import validate_learning_input, validate_config_write, V31_EPOCH
+except ImportError:
+    validate_learning_input = None
+    validate_config_write = None
+    V31_EPOCH = "2026-03-29T17:44:00"
+
+V3_EPOCH = V31_EPOCH  # Use V3.1 epoch — only learn from post-epoch trades
+
+log = logging.getLogger("learning")
 
 DB_PATH = "/home/solbot/lazarus/logs/lazarus.db"
 
@@ -61,8 +71,18 @@ def analyze_and_tune(c):
     """, (V3_EPOCH,)).fetchall()
 
     if not trades:
-        print("No trades to learn from")
+        log.info("[LEARNING] No trades to learn from")
         return
+
+    # ── Layer 2: Input validation (epoch + Stoic Gate + completeness) ──
+    if validate_learning_input is not None:
+        input_check = validate_learning_input(trades, epoch=V3_EPOCH, min_trades=20)
+        if not input_check["valid"]:
+            log.warning(f"[LEARNING] Input validation FAILED: {input_check['reason']} | {input_check['details']}")
+            return  # Do not evaluate — fail closed
+        log.info(f"[LEARNING] Input validation PASSED: {input_check['details']['accepted']} trades accepted")
+    else:
+        log.warning("[LEARNING] data_integrity not available — skipping input validation")
 
     wins = [t for t in trades if (t[2] or 0) > 0]
     losses = [t for t in trades if (t[2] or 0) <= 0]
@@ -128,6 +148,14 @@ def analyze_and_tune(c):
 
 
 def _set_config(c, key, value, reason, now):
+    # ── Layer 3: Output validation (bounds check before DB write) ──
+    if validate_config_write is not None:
+        write_check = validate_config_write(key, value)
+        if not write_check["valid"]:
+            log.warning(f"[LEARNING] Config write BLOCKED: {write_check['reason']} | {write_check['details']}")
+            return  # Skip this write — fail closed
+        log.info(f"[LEARNING] Config write APPROVED: {key}={value}")
+
     c.execute("""
         INSERT OR REPLACE INTO dynamic_config (key, value, reason, updated)
         VALUES (?,?,?,?)
