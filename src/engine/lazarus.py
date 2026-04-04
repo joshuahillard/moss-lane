@@ -43,6 +43,17 @@ import base58
 from solders.keypair import Keypair
 from solders.transaction import VersionedTransaction
 
+# Data integrity validation (5-layer protection)
+try:
+    from data_integrity import (
+        validate_epoch_query, validate_startup_config,
+        check_data_anomalies, V31_EPOCH, PARAM_BOUNDS,
+    )
+    _DI = True
+except ImportError:
+    _DI = False
+    V31_EPOCH = "2026-03-29T17:44:00"
+
 # Optional modules (graceful degradation if missing)
 try:
     from prepump_tracker import PrePumpTracker, FilterCounter, EARLY_ENTRY_FILTERS
@@ -64,14 +75,13 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 # LOGGING — single setup, never duplicate
 # ══════════════════════════════════════════════════════════════════════════════
-log_dir = os.path.join(os.path.dirname(__file__), "logs")
-os.makedirs(log_dir, exist_ok=True)
+os.makedirs("/home/solbot/lazarus/logs", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(os.path.join(log_dir, "lazarus.log")),
+        logging.FileHandler("/home/solbot/lazarus/logs/lazarus.log"),
     ],
 )
 log = logging.getLogger("fort_v2")
@@ -81,9 +91,7 @@ log = logging.getLogger("fort_v2")
 # ENV LOADER — custom .env parser (handles all quote styles)
 # ══════════════════════════════════════════════════════════════════════════════
 class EnvLoader:
-    def __init__(self, path: str = None):
-        if path is None:
-            path = os.path.join(os.path.dirname(__file__), ".env")
+    def __init__(self, path: str = "/home/solbot/lazarus/.env"):
         self.data: Dict[str, str] = {}
         try:
             for raw in open(path).read().splitlines():
@@ -106,7 +114,7 @@ ENV = EnvLoader()
 # CONFIG — single source of truth (edit values HERE only)
 # ══════════════════════════════════════════════════════════════════════════════
 WSOL = "So11111111111111111111111111111111111111112"
-DB_PATH = os.path.join(os.path.dirname(__file__), "logs", "lazarus.db")
+DB_PATH = "/home/solbot/lazarus/logs/lazarus.db"
 
 CFG: Dict = {
     # ── APIs ──────────────────────────────────────────────────────────────
@@ -117,6 +125,7 @@ CFG: Dict = {
     "position_pct":     0.15,       # 15% per trade (floor: 10%, ceiling: 30%)
     "max_positions":    1,          # one trade at a time
     "min_sol_balance":  0.05,       # never trade below this
+    "paper_capital_usd": 10_000,    # virtual capital for paper mode ($10k)
 
     # ── Exit rules ────────────────────────────────────────────────────────
     "take_profit":      1.25,       # +25% TP
@@ -151,12 +160,17 @@ CFG: Dict = {
 
     # ── Smart money wallets ───────────────────────────────────────────────
     "smart_wallets": [
-        "YOUR_WALLET_1",
-        "YOUR_WALLET_2",
-        "YOUR_WALLET_3",
-        "YOUR_WALLET_4",
-        "YOUR_WALLET_5",
+        "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        "ASTyfSima4LLAdDgoFGkgqoKowG1LZFDr9fAQrg7iaJZ",
+        "GUfCR9mK6azb9vcpsxgXyj7XRPAaEqoGMxksMQFKbcGJ",
+        "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
+        "7R3nxGFMaeMoKmVzA5UQrARzECkLQqCU7KBDMfbBPNDK",
     ],
+
+    # ── Multi-wallet dispatcher (Phase 2) ────────────────────────────────
+    "dispatcher_enabled":   False,      # Set True to activate multi-wallet routing
+    "executor_addresses":   [],         # Populated from .env EXEC_WALLET_*_KEY
+    "wallet_cooldown_sec":  60,         # Post-trade cooldown per executor wallet
 
     # ── Blacklisted tokens ────────────────────────────────────────────────
     "blacklist": {
@@ -170,6 +184,27 @@ CFG: Dict = {
 }
 
 PAPER = ENV.get("PAPER_TRADING", "false").lower() == "true"
+
+# ── Dispatcher config from .env ──────────────────────────────────────────
+_disp = ENV.get("DISPATCHER_ENABLED", "false").lower() == "true"
+if _disp:
+    # Load executor addresses from .env keys (EXEC_WALLET_1_KEY ... EXEC_WALLET_5_KEY)
+    _exec_addrs = []
+    for i in range(1, 6):
+        pk = ENV.get(f"EXEC_WALLET_{i}_KEY", "")
+        if pk:
+            try:
+                kp = Keypair.from_base58_string(pk)
+                _exec_addrs.append(str(kp.pubkey()))
+            except Exception as e:
+                log.warning(f"Invalid EXEC_WALLET_{i}_KEY: {e}")
+    if _exec_addrs:
+        CFG["dispatcher_enabled"] = True
+        CFG["executor_addresses"] = _exec_addrs
+        log.info(f"Dispatcher: {len(_exec_addrs)} executors loaded")
+    else:
+        log.warning("DISPATCHER_ENABLED=true but no valid executor keys found — disabled")
+del _disp
 
 log.info(f"Birdeye key : {CFG['birdeye_key'][:8]}... len={len(CFG['birdeye_key'])}")
 log.info(f"RPC         : {CFG['rpc_url'][:50]}")
@@ -385,6 +420,19 @@ class Database:
         if t[0]:
             mode = "PAPER" if PAPER else "LIVE"
             log.info(f"[{mode}] trades={t[0]} | pnl=${t[1] or 0:.2f} | wins={t[2]} | avg={t[3] or 0:.1f}%")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LAYER 1: SAFE EPOCH QUERY — validates epoch queries before execution
+# ══════════════════════════════════════════════════════════════════════════════
+def safe_epoch_query(db_conn, query, params=None):
+    """Wrapper that validates epoch queries before execution (Layer 1)."""
+    if _DI:
+        query_check = validate_epoch_query(query)
+        if not query_check["valid"]:
+            log.error(f"[QUERY] BLOCKED unsafe epoch query: {query_check['reason']}")
+            raise ValueError(f"Unsafe epoch query: {query_check['reason']}")
+    return db_conn.execute(query, params or [])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -714,7 +762,7 @@ class SmartMoneyScanner:
             source_id = f"copy_{wallet[:8]}"
             try:
                 url = (f"https://api.helius.xyz/v0/addresses/{wallet}/transactions"
-                       f"?api-key=YOUR_HELIUS_KEY&limit=5&type=SWAP")
+                       f"?api-key={CFG.get('helius_key', '')}&limit=5&type=SWAP")
                 txs = curl_get(url, headers={"X-API-KEY": CFG["birdeye_key"]})
                 if not isinstance(txs, list):
                     txs = []
@@ -1081,6 +1129,20 @@ class TradeExecutor:
         # Set cooldown for this token
         self.db.set_cooldown(addr, sym, CFG["cooldown_seconds"])
 
+        # Tax vault skim (Phase 2 — only on profitable trades in dispatcher mode)
+        if _tax_vault and pnl_usd > 0 and not PAPER:
+            try:
+                pnl_sol = pnl_usd / sol_price if sol_price > 0 else 0
+                skim = _tax_vault.calculate_skim(
+                    # Use the executor wallet that made this trade, or main wallet
+                    getattr(self, '_current_executor_address', str(WALLET)),
+                    pnl_sol,
+                )
+                # Actual transfer is handled by dispatcher loop (not here)
+                # This just accumulates and logs
+            except Exception as e:
+                log.warning(f"Tax vault skim error: {e}")
+
         total = self.db.conn.execute(
             "SELECT COUNT(*), SUM(pnl_usd) FROM trades WHERE paper=?",
             (1 if PAPER else 0,)).fetchone()
@@ -1117,16 +1179,74 @@ except Exception:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# SCANNER COORDINATOR (Phase 2 — optional)
+# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# TAX VAULT (Phase 2 — optional)
+# ══════════════════════════════════════════════════════════════════════════════
+_tax_vault = None
+if CFG["dispatcher_enabled"]:
+    try:
+        from tax_vault import TaxVault, TaxVaultConfig
+        _tv_addr = ""
+        _tv_key = ENV.get("TAX_VAULT_KEY", "")
+        if _tv_key:
+            try:
+                _tv_kp = Keypair.from_base58_string(_tv_key)
+                _tv_addr = str(_tv_kp.pubkey())
+            except Exception as e:
+                log.warning(f"Invalid TAX_VAULT_KEY: {e}")
+        if _tv_addr:
+            _tax_vault = TaxVault(
+                TaxVaultConfig(tax_vault_address=_tv_addr),
+                db_path=DB_PATH,
+            )
+            log.info(f"TaxVault loaded: vault={_tv_addr[:12]}...")
+        else:
+            log.warning("TAX_VAULT_KEY not configured — tax vault disabled")
+    except Exception as e:
+        log.warning(f"TaxVault not available: {e}")
+
+
+_coordinator = None
+if CFG["dispatcher_enabled"] and CFG["executor_addresses"]:
+    try:
+        from scanner_coordinator import ScannerCoordinator
+        _coordinator = ScannerCoordinator(
+            executor_addresses=CFG["executor_addresses"],
+            cooldown_seconds=CFG["cooldown_seconds"],
+            max_entries_per_token_daily=CFG["max_entries_per_token"],
+            max_concurrent_per_token=2,
+            wallet_cooldown_seconds=CFG["wallet_cooldown_sec"],
+        )
+        log.info("ScannerCoordinator loaded — multi-wallet routing active")
+    except Exception as e:
+        log.error(f"ScannerCoordinator failed to load: {e} — using single-wallet mode")
+        CFG["dispatcher_enabled"] = False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MAIN LOOP
 # ══════════════════════════════════════════════════════════════════════════════
-async def _trade_wrapper(session, executor, sig, bal, active_addrs, db):
+async def _trade_wrapper(session, executor, sig, bal, active_addrs, db,
+                         coordinator=None, executor_address=None):
     """Run a trade and clean up active set on completion."""
     try:
+        # Coordinator: ASSIGNED → IN_TRADE
+        if coordinator and executor_address:
+            coordinator.mark_in_trade(executor_address)
         await executor.execute(session, sig, bal)
     except Exception as e:
         log.error(f"Trade error {sig.symbol}: {e}")
     finally:
         active_addrs.discard(sig.address)
+        # Coordinator: IN_TRADE → COOLDOWN (or cancel if never started)
+        if coordinator and executor_address:
+            ex = coordinator.executors.get(executor_address)
+            if ex and ex.state.value == "IN_TRADE":
+                coordinator.mark_trade_complete(executor_address)
+            elif ex and ex.state.value == "ASSIGNED":
+                coordinator.cancel_assignment(executor_address)
 
 
 async def main():
@@ -1142,6 +1262,33 @@ async def main():
     bridge.update_stat("mode", "PAPER" if PAPER else "LIVE")
     bridge.set_config(CFG)
     bridge.write_state(force=True)
+
+    # ── Layer 4: Startup assertions — catch config drift before any trades ──
+    if _DI:
+        try:
+            _startup_db = sqlite3.connect(DB_PATH, timeout=5)
+            _bc_rows = _startup_db.execute("SELECT key, value FROM bot_config").fetchall()
+            _dc_rows = _startup_db.execute("SELECT key, value FROM dynamic_config").fetchall()
+            _startup_db.close()
+            _bot_cfg = {k: v for k, v in _bc_rows}
+            _dyn_cfg = {k: v for k, v in _dc_rows}
+            startup_check = validate_startup_config(_bot_cfg, _dyn_cfg, epoch=V31_EPOCH)
+            if not startup_check["valid"]:
+                log.critical(f"[STARTUP] ASSERTION FAILED: {startup_check['reason']}")
+                for fail in startup_check["details"]["checks_failed"]:
+                    log.critical(f"[STARTUP]   FAIL: {fail}")
+                log.critical("[STARTUP] Lazarus will NOT start until this is resolved.")
+                import sys
+                sys.exit(1)
+            log.info(f"[STARTUP] All assertions passed ({len(startup_check['details']['checks_passed'])} checks)")
+            for p in startup_check["details"]["checks_passed"]:
+                log.info(f"[STARTUP]   OK: {p}")
+        except SystemExit:
+            raise
+        except Exception as e:
+            log.warning(f"[STARTUP] Assertion check error (non-fatal): {e}")
+    else:
+        log.warning("[STARTUP] data_integrity not available — skipping startup assertions")
 
     db = Database()
     executor = TradeExecutor(db)
@@ -1172,7 +1319,7 @@ async def main():
                 # ── SAFETY CHECKS ──
                 # 1. Daily loss limit
                 daily_pnl = db.get_daily_pnl()
-                portfolio_usd = bal * sol_price
+                portfolio_usd = CFG["paper_capital_usd"] if PAPER else bal * sol_price
                 if portfolio_usd > 0 and abs(daily_pnl) / portfolio_usd * 100 > CFG["daily_loss_limit_pct"]:
                     log.warning(f"DAILY LOSS LIMIT: ${daily_pnl:.2f} "
                                 f"({abs(daily_pnl)/portfolio_usd*100:.1f}%) — pausing")
@@ -1206,16 +1353,39 @@ async def main():
                         _tracker.flush_snapshots()
 
                 # ── SCAN + TRADE ──
-                if len(active_addrs) < CFG["max_positions"]:
-                    signals = aggregator.get_signals(db, active_addrs)
-                    slots = CFG["max_positions"] - len(active_addrs)
-                    for sig in signals[:slots]:
-                        if sig.address not in active_addrs:
-                            active_addrs.add(sig.address)
-                            log.info(f"Opening: {sig.symbol} | score={sig.score:.2f} | "
-                                     f"source={sig.source}")
-                            asyncio.create_task(
-                                _trade_wrapper(session, executor, sig, bal, active_addrs, db))
+                if CFG["dispatcher_enabled"] and _coordinator:
+                    # Multi-wallet mode: coordinator routes to available executors
+                    idle_slots = _coordinator.get_idle_count()
+                    if idle_slots > 0:
+                        signals = aggregator.get_signals(db, active_addrs)
+                        for sig in signals[:idle_slots]:
+                            if sig.address not in active_addrs:
+                                routed = _coordinator.route(sig)
+                                if routed:
+                                    active_addrs.add(sig.address)
+                                    log.info(
+                                        f"Opening: {sig.symbol} | score={sig.score:.2f} | "
+                                        f"source={sig.source} | executor={routed.executor_address[:8]}..."
+                                    )
+                                    asyncio.create_task(
+                                        _trade_wrapper(
+                                            session, executor, sig, bal, active_addrs, db,
+                                            coordinator=_coordinator,
+                                            executor_address=routed.executor_address,
+                                        )
+                                    )
+                else:
+                    # Single-wallet mode: original behavior, no coordinator
+                    if len(active_addrs) < CFG["max_positions"]:
+                        signals = aggregator.get_signals(db, active_addrs)
+                        slots = CFG["max_positions"] - len(active_addrs)
+                        for sig in signals[:slots]:
+                            if sig.address not in active_addrs:
+                                active_addrs.add(sig.address)
+                                log.info(f"Opening: {sig.symbol} | score={sig.score:.2f} | "
+                                         f"source={sig.source}")
+                                asyncio.create_task(
+                                    _trade_wrapper(session, executor, sig, bal, active_addrs, db))
 
                 bridge.scan_ended()
 
@@ -1247,6 +1417,35 @@ async def main():
                                 pass
                 except Exception as e:
                     log.warning(f"Learning cycle error: {e}")
+
+            # ── Layer 5: Anomaly detection every 20 cycles ──
+            if cycle % 20 == 0 and _DI:
+                try:
+                    _anom_db = sqlite3.connect(DB_PATH, timeout=5)
+                    _recent = _anom_db.execute(
+                        "SELECT symbol, token_address, pnl_pct, pnl_usd, source, "
+                        "timestamp, exit_reason, chg_pct, liq "
+                        "FROM trades WHERE timestamp >= ? AND side='sell' "
+                        "ORDER BY timestamp DESC LIMIT 30",
+                        (V31_EPOCH,)
+                    ).fetchall()
+                    _anom_db.close()
+                    if _recent:
+                        _recent_dicts = [
+                            {"symbol": r[0], "token_address": r[1], "pnl_pct": r[2],
+                             "pnl_usd": r[3], "source": r[4], "timestamp": r[5],
+                             "exit_reason": r[6], "chg_pct": r[7], "liq": r[8]}
+                            for r in _recent
+                        ]
+                        anomaly_check = check_data_anomalies(_recent_dicts, CFG)
+                        if anomaly_check["anomalies"]:
+                            for anomaly in anomaly_check["anomalies"]:
+                                log.warning(f"[ANOMALY] {anomaly['type']}: {anomaly['message']} "
+                                            f"(severity: {anomaly['severity']})")
+                            if anomaly_check["severity"] == "critical":
+                                log.critical(f"[ANOMALY] CRITICAL — {anomaly_check['recommendation']}")
+                except Exception as e:
+                    log.warning(f"[ANOMALY] Check error: {e}")
 
             bridge.heartbeat(balance_usd=bal * get_sol_price(), balance_sol=bal)
             bridge.write_state()

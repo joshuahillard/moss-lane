@@ -814,7 +814,7 @@ if __name__ == "__main__":
     )
 
     DB_PATH = "/home/solbot/lazarus/logs/lazarus.db"
-    HELIUS_KEY = "REDACTED_HELIUS_KEY"
+    HELIUS_KEY = os.environ.get("HELIUS_API_KEY", "")
 
     async def main():
         watcher = WhaleWatcher(

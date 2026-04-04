@@ -711,7 +711,7 @@ class SmartMoneyScanner:
             source_id = f"copy_{wallet[:8]}"
             try:
                 url = (f"https://api.helius.xyz/v0/addresses/{wallet}/transactions"
-                       f"?api-key=REDACTED_HELIUS_KEY&limit=5&type=SWAP")
+                       f"?api-key={CFG.get('helius_key', '')}&limit=5&type=SWAP")
                 txs = curl_get(url, headers={"X-API-KEY": CFG["birdeye_key"]})
                 if not isinstance(txs, list):
                     txs = []
