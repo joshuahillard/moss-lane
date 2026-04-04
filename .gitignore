@@ -30,3 +30,7 @@ logs/
 features.csv
 load_test_report.json
 desktop.ini
+
+# Markdown copies of source files
+docs/py/
+docs/sh/
