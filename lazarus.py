@@ -125,6 +125,7 @@ CFG: Dict = {
     "position_pct":     0.15,       # 15% per trade (floor: 10%, ceiling: 30%)
     "max_positions":    1,          # one trade at a time
     "min_sol_balance":  0.05,       # never trade below this
+    "paper_capital_usd": 10_000,    # virtual capital for paper mode ($10k)
 
     # ── Exit rules ────────────────────────────────────────────────────────
     "take_profit":      1.25,       # +25% TP
@@ -1318,7 +1319,7 @@ async def main():
                 # ── SAFETY CHECKS ──
                 # 1. Daily loss limit
                 daily_pnl = db.get_daily_pnl()
-                portfolio_usd = bal * sol_price
+                portfolio_usd = CFG["paper_capital_usd"] if PAPER else bal * sol_price
                 if portfolio_usd > 0 and abs(daily_pnl) / portfolio_usd * 100 > CFG["daily_loss_limit_pct"]:
                     log.warning(f"DAILY LOSS LIMIT: ${daily_pnl:.2f} "
                                 f"({abs(daily_pnl)/portfolio_usd*100:.1f}%) — pausing")
