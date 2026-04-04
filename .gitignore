@@ -34,3 +34,21 @@ desktop.ini
 # Markdown copies of source files
 docs/py/
 docs/sh/
+
+# IDE
+.vscode/
+.idea/
+
+# Coverage & caching
+.coverage
+.ruff_cache/
+.pytest_cache/
+
+# Model artifacts (backups)
+*.json.bak
+
+# OS metadata
+desktop.ini
+
+# Local scripts
+push_to_github.sh

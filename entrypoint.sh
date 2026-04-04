@@ -47,4 +47,4 @@ HTTPServer(('0.0.0.0', int(sys.argv[1])), Health).serve_forever()
 " "$PORT" &
 
 # Run the bot as the main process — if it exits, the container exits
-exec python lazarus.py
+exec python -m src.engine.lazarus

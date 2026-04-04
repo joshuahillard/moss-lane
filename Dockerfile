@@ -39,12 +39,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ── Application code ─────────────────────────────────────────────────────────
 # These are the files that make up the Lazarus engine.
 # .dockerignore prevents .env, logs/, __pycache__/ from leaking into the image.
-COPY lazarus.py .
-COPY learning_engine.py .
+COPY src/ ./src/
 COPY entrypoint.sh .
-COPY test_foundation.py .
-COPY db_adapter.py .
-COPY migrate_sqlite_to_pg.py .
 
 # ── Path compatibility (zero code changes to lazarus.py) ────────────────────
 # lazarus.py has two hardcoded VPS paths:
@@ -71,7 +67,7 @@ USER solbot
 # --retries: how many consecutive failures before "unhealthy"
 # --start-period: grace period on startup (let the bot initialize)
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
-    CMD pgrep -f "python lazarus.py" > /dev/null || exit 1
+    CMD pgrep -f "python -m src.engine.lazarus" > /dev/null || exit 1
 
 # ── Entry point ──────────────────────────────────────────────────────────────
 # Cloud Run requires a container to listen on $PORT. Lazarus is a background
