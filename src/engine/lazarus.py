@@ -185,6 +185,20 @@ CFG: Dict = {
 
 PAPER = ENV.get("PAPER_TRADING", "false").lower() == "true"
 
+# ── Dynamic virtual balance for paper mode ──────────────────────────────
+V31_EPOCH_TS = "2026-03-29T17:44:00"
+
+def _get_virtual_balance(db_conn, base=10_000):
+    """Return live paper balance: base + accumulated PnL since v3.1 epoch."""
+    try:
+        row = db_conn.execute(
+            "SELECT COALESCE(SUM(CAST(pnl_usd AS REAL)), 0) FROM trades "
+            "WHERE paper=1 AND side='SELL' AND timestamp >= ?",
+            (V31_EPOCH_TS,)).fetchone()
+        return base + (row[0] if row else 0)
+    except Exception:
+        return base
+
 # ── Dispatcher config from .env ──────────────────────────────────────────
 _disp = ENV.get("DISPATCHER_ENABLED", "false").lower() == "true"
 if _disp:
@@ -1033,7 +1047,15 @@ class TradeExecutor:
             log.warning(f"Low balance read ({sol_balance:.4f}), using cache ({_balance_cache['value']:.4f})")
             sol_balance = _balance_cache["value"]
 
-        sol_amt = sol_balance * CFG["position_pct"]
+        # Paper mode: size from dynamic virtual balance, not real wallet
+        if PAPER:
+            sol_price_now = get_sol_price()
+            vbal_usd = _get_virtual_balance(self.db.conn)
+            virtual_sol = vbal_usd / sol_price_now if sol_price_now > 0 else 100
+            sol_amt = virtual_sol * CFG['position_pct']
+            log.info(f'  [PAPER] Virtual balance: ${vbal_usd:,.2f} -> {virtual_sol:.2f} SOL -> size {sol_amt:.4f} SOL')
+        else:
+            sol_amt = sol_balance * CFG['position_pct']
         lam = int(sol_amt * 1e9)
 
         # ── FINAL GATE: JIT momentum re-check ──
@@ -1304,7 +1326,11 @@ async def main():
 
     async with aiohttp.ClientSession() as session:
         bal = await rpc_get_balance(session)
-        log.info(f"Starting balance: {bal:.4f} SOL (~${bal * get_sol_price():.2f})")
+        if PAPER:
+            _startup_vbal = _get_virtual_balance(db.conn)
+            log.info(f"Starting balance: {bal:.4f} SOL (~${_startup_vbal:,.0f} VIRTUAL)")
+        else:
+            log.info(f"Starting balance: {bal:.4f} SOL (~${bal * get_sol_price():.2f})")
 
         while True:
             cycle += 1
@@ -1313,14 +1339,28 @@ async def main():
             try:
                 bal = await rpc_get_balance(session)
                 sol_price = get_sol_price()
-                log.info(f"[Cycle {cycle}] {bal:.4f} SOL (${bal * sol_price:.2f}) | "
-                         f"open={len(active_addrs)}/{CFG['max_positions']}")
+                # ── Cycle log ──
+                if PAPER:
+                    _vbal_usd = _get_virtual_balance(db.conn)
+                    _vbal_pnl = _vbal_usd - CFG['paper_capital_usd']
+                    log.info(f"[Cycle {cycle}] ${_vbal_usd:,.0f} VIRTUAL (PnL: ${_vbal_pnl:+,.2f}) | "
+                             f"open={len(active_addrs)}/{CFG['max_positions']}")
+                    # Dashboard parses this line for virtual balance display
+                    if cycle % 30 == 1:
+                        log.info(f'Starting balance: {bal:.4f} SOL (~${_vbal_usd:,.0f} VIRTUAL | PnL: ${_vbal_pnl:+,.2f})')
+                else:
+                    log.info(f"[Cycle {cycle}] {bal:.4f} SOL (${bal * sol_price:.2f}) | "
+                             f"open={len(active_addrs)}/{CFG['max_positions']}")
 
                 # ── SAFETY CHECKS ──
                 # 1. Daily loss limit
                 daily_pnl = db.get_daily_pnl()
-                portfolio_usd = CFG["paper_capital_usd"] if PAPER else bal * sol_price
-                if portfolio_usd > 0 and abs(daily_pnl) / portfolio_usd * 100 > CFG["daily_loss_limit_pct"]:
+                # In paper mode, use dynamic virtual balance as denominator
+                if PAPER:
+                    portfolio_usd = _vbal_usd
+                else:
+                    portfolio_usd = bal * sol_price
+                if portfolio_usd > 0 and daily_pnl < 0 and abs(daily_pnl) / portfolio_usd * 100 > CFG["daily_loss_limit_pct"]:
                     log.warning(f"DAILY LOSS LIMIT: ${daily_pnl:.2f} "
                                 f"({abs(daily_pnl)/portfolio_usd*100:.1f}%) — pausing")
                     bridge.scan_ended()
