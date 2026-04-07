@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Moss Lane Golden Corpus Manifest",
+  "type": "object",
+  "required": ["project", "status", "as_of", "counts", "fixtures"],
+  "properties": {
+    "project": {"type": "string"},
+    "status": {"type": "string"},
+    "as_of": {"type": "string"},
+    "counts": {
+      "type": "object",
+      "required": ["approve", "reject", "escalate", "adversarial", "integration"],
+      "properties": {
+        "approve": {"type": "integer", "minimum": 0},
+        "reject": {"type": "integer", "minimum": 0},
+        "escalate": {"type": "integer", "minimum": 0},
+        "adversarial": {"type": "integer", "minimum": 0},
+        "integration": {"type": "integer", "minimum": 0}
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "path", "expected_outcome"],
+        "properties": {
+          "id": {"type": "string"},
+          "category": {"type": "string"},
+          "path": {"type": "string"},
+          "expected_outcome": {"type": "string"}
+        }
+      }
+    }
+  }
+}

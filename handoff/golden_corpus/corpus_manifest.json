@@ -1,0 +1,29 @@
+{
+  "project": "Moss Lane",
+  "status": "documentation-first",
+  "as_of": "2026-04-07",
+  "counts": {
+    "approve": 3,
+    "reject": 3,
+    "escalate": 3,
+    "adversarial": 4,
+    "integration": 2
+  },
+  "fixtures": [
+    {"id": "A-001", "category": "approve", "path": "approve/A-001-clown-trade-validates-exit-chain.md", "expected_outcome": "approve"},
+    {"id": "A-002", "category": "approve", "path": "approve/A-002-data-integrity-startup-assertions-pass.md", "expected_outcome": "approve"},
+    {"id": "A-003", "category": "approve", "path": "approve/A-003-original-filter-performance-supports-tight-regime.md", "expected_outcome": "approve"},
+    {"id": "R-001", "category": "reject", "path": "reject/R-001-strftime-epoch-query.md", "expected_outcome": "reject"},
+    {"id": "R-002", "category": "reject", "path": "reject/R-002-out-of-bounds-dynamic-config.md", "expected_outcome": "reject"},
+    {"id": "R-003", "category": "reject", "path": "reject/R-003-go-live-while-wide-net-remains-active.md", "expected_outcome": "reject"},
+    {"id": "E-001", "category": "escalate", "path": "escalate/E-001-vps-first-vs-gcp-first-go-live.md", "expected_outcome": "escalate"},
+    {"id": "E-002", "category": "escalate", "path": "escalate/E-002-dispatcher-built-but-not-deployed.md", "expected_outcome": "escalate"},
+    {"id": "E-003", "category": "escalate", "path": "escalate/E-003-mixed-regime-learning-data.md", "expected_outcome": "escalate"},
+    {"id": "ADV-001", "category": "adversarial", "path": "adversarial/ADV-001-space-separated-epoch.md", "expected_outcome": "reject"},
+    {"id": "ADV-002", "category": "adversarial", "path": "adversarial/ADV-002-stale-bot-config-overrides-code.md", "expected_outcome": "reject"},
+    {"id": "ADV-003", "category": "adversarial", "path": "adversarial/ADV-003-local-test-green-claim-with-missing-deps.md", "expected_outcome": "reject"},
+    {"id": "ADV-004", "category": "adversarial", "path": "adversarial/ADV-004-undeployed-module-presented-as-live.md", "expected_outcome": "reject"},
+    {"id": "CTX-001", "category": "integration", "path": "integration/CTX-001-three-layer-config-alignment.md", "expected_outcome": "approve"},
+    {"id": "CTX-002", "category": "integration", "path": "integration/CTX-002-paper-mode-loss-denominator.md", "expected_outcome": "approve"}
+  ]
+}
