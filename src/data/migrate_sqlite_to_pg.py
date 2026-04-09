@@ -39,6 +39,10 @@ TABLES = [
     "daily_pnl",
     "balance_snapshots",
     "btc_eth_pillars",
+    "bot_config",
+    "config_audit_log",
+    "dynamic_config",
+    "rug_blacklist",
 ]
 
 

@@ -97,6 +97,26 @@ CREATE TABLE IF NOT EXISTS btc_eth_pillars (
     btc_change_4h DOUBLE PRECISION, eth_change_4h DOUBLE PRECISION,
     crash_active INTEGER DEFAULT 0, dip_buy_active INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS bot_config (
+    key TEXT PRIMARY KEY, value TEXT,
+    updated_at TEXT, reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS config_audit_log (
+    id SERIAL PRIMARY KEY,
+    changed_at TEXT DEFAULT (NOW()::TEXT),
+    key TEXT, old_value TEXT, new_value TEXT,
+    reason TEXT, triggered_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS dynamic_config (
+    key TEXT PRIMARY KEY, value TEXT, reason TEXT, updated TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rug_blacklist (
+    address TEXT PRIMARY KEY, symbol TEXT, ts TEXT, loss_pct DOUBLE PRECISION
+);
 """
 
 # SQLite schema — identical to lazarus.py Database._init_tables()
@@ -140,6 +160,22 @@ CREATE TABLE IF NOT EXISTS btc_eth_pillars (
     timestamp TEXT, btc_price REAL, eth_price REAL,
     btc_change_4h REAL, eth_change_4h REAL,
     crash_active INTEGER DEFAULT 0, dip_buy_active INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS bot_config (
+    key TEXT PRIMARY KEY, value TEXT,
+    updated_at TEXT, reason TEXT
+);
+CREATE TABLE IF NOT EXISTS config_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    changed_at TEXT DEFAULT (datetime('now')),
+    key TEXT, old_value TEXT, new_value TEXT,
+    reason TEXT, triggered_by TEXT
+);
+CREATE TABLE IF NOT EXISTS dynamic_config (
+    key TEXT PRIMARY KEY, value TEXT, reason TEXT, updated TEXT
+);
+CREATE TABLE IF NOT EXISTS rug_blacklist (
+    address TEXT PRIMARY KEY, symbol TEXT, ts TEXT, loss_pct REAL
 );
 """
 
