@@ -41,6 +41,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # .dockerignore prevents .env, logs/, __pycache__/ from leaking into the image.
 COPY src/ ./src/
 COPY entrypoint.sh .
+# Fix Windows CRLF line endings — bash can't parse \r
+RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
 
 # ── Path compatibility (zero code changes to lazarus.py) ────────────────────
 # lazarus.py has two hardcoded VPS paths:
@@ -59,15 +61,17 @@ RUN mkdir -p /home/solbot/lazarus \
 USER solbot
 
 # ── Health check ─────────────────────────────────────────────────────────────
-# Every 30s, check if the python process is alive. If it's not, Docker marks
-# the container "unhealthy" and the restart policy kicks in.
-# Why pgrep? The bot has no HTTP endpoint — it's a background worker.
+# Every 30s, hit the /health endpoint. It checks DB connectivity AND the
+# lazarus process. If either is down, /health returns 503 → Docker marks
+# the container "unhealthy" → restart policy kicks in.
+# WHY curl instead of pgrep? pgrep only checks if the process exists.
+# /health also verifies DB connectivity — fail-closed, no silent failures.
 # --interval: how often to check
 # --timeout: max time for the check command itself
 # --retries: how many consecutive failures before "unhealthy"
-# --start-period: grace period on startup (let the bot initialize)
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
-    CMD pgrep -f "python -m src.engine.lazarus" > /dev/null || exit 1
+# --start-period: grace period on startup (let the bot + DB initialize)
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=15s \
+    CMD curl -sf http://localhost:${PORT:-8080}/health > /dev/null || exit 1
 
 # ── Entry point ──────────────────────────────────────────────────────────────
 # Cloud Run requires a container to listen on $PORT. Lazarus is a background
