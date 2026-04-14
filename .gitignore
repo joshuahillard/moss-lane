@@ -1,5 +1,11 @@
-﻿# Secrets and environment
+# Secrets and environment
 .env
+.env.*
+*.env
+!.env.example
+!.env.sample
+!.env.template
+.envrc
 *.pem
 *.key
 
