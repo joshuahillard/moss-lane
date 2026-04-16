@@ -138,14 +138,15 @@ CFG: Dict = {
     "sniper_timeout_sec": 60,       # cut non-runners after 60s if < +1%
 
     # ── Scanner filters ───────────────────────────────────────────────────
-    "min_hourly_vol":   800,        # minimum 1h volume USD
-    "min_chg_pct":      10.0,       # lowered from 20 — opens the entry window
-    "max_chg_pct":      80.0,       # raised from 60 — data shows 30-80% is the sweet spot
+    "min_hourly_vol":   250,        # low-volume epoch floor after 400 starved scans
+    "min_chg_pct":      10.0,       # keep proven momentum floor; do not reopen <10% cohort
+    "max_chg_pct":      120.0,      # allow stronger runners after 100% ceiling clipped live pumps
     "min_m5_pct":       0.5,        # 5-minute momentum must be positive
     "min_mc":           10_000,     # minimum market cap
     "max_mc":           10_000_000, # maximum market cap
-    "min_liq":          50_000,     # minimum liquidity (sub-50K is graveyard)
+    "min_liq":          30_000,     # low-volume epoch keeps the proven 30k lower-liquidity band
     "min_vmr":          0.10,       # volume-to-MC ratio floor
+    "filter_regime":    "v3.2_lowvol_epoch",  # persisted on trade rows for cohort analysis
     "min_pair_age_min": 60,         # pair must be at least 60 min old
     "scan_interval":    30,         # seconds between scan cycles
 
@@ -184,6 +185,56 @@ CFG: Dict = {
 }
 
 PAPER = ENV.get("PAPER_TRADING", "false").lower() == "true"
+
+STARTUP_OVERRIDE_KEYS = {
+    "position_pct",
+    "max_positions",
+    "take_profit",
+    "stop_loss",
+    "trail_arm",
+    "min_hourly_vol",
+    "min_chg_pct",
+    "max_chg_pct",
+    "min_liq",
+    "min_vmr",
+    "filter_regime",
+}
+
+
+def _coerce_cfg_value(key: str, raw: str):
+    current = CFG[key]
+    if isinstance(current, bool):
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(current, int) and not isinstance(current, bool):
+        return int(float(raw))
+    if isinstance(current, float):
+        return float(raw)
+    return str(raw)
+
+
+def _apply_startup_config_overrides():
+    """Apply bot_config and dynamic_config before the startup banner is emitted."""
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=5)
+        try:
+            sources = (
+                ("bot_config", conn.execute("SELECT key, value FROM bot_config").fetchall()),
+                ("dynamic_config", conn.execute("SELECT key, value FROM dynamic_config").fetchall()),
+            )
+        finally:
+            conn.close()
+
+        for source_name, rows in sources:
+            for key, value in rows:
+                if key not in STARTUP_OVERRIDE_KEYS:
+                    continue
+                try:
+                    CFG[key] = _coerce_cfg_value(key, value)
+                    log.info(f"Startup config: {key}={CFG[key]} ({source_name})")
+                except Exception as e:
+                    log.warning(f"Startup config parse failed for {key}={value!r}: {e}")
+    except Exception as e:
+        log.warning(f"Startup config override load failed: {e}")
 
 # ── Dynamic virtual balance for paper mode ──────────────────────────────
 V31_EPOCH_TS = "2026-03-29T17:44:00"
@@ -299,7 +350,8 @@ class Database:
                 rug_risk TEXT, trailing_tp_activated INTEGER DEFAULT 0,
                 smart_money_confirmed INTEGER DEFAULT 0, hour_utc INTEGER,
                 day_of_week INTEGER, address TEXT, entry REAL,
-                tx_buy TEXT, tx_sell TEXT, peak_pnl_pct REAL
+                tx_buy TEXT, tx_sell TEXT, peak_pnl_pct REAL,
+                filter_regime TEXT DEFAULT 'unknown'
             );
             CREATE TABLE IF NOT EXISTS signal_performance (
                 source TEXT PRIMARY KEY, wins INTEGER DEFAULT 0,
@@ -344,8 +396,9 @@ class Database:
                  pnl_usd, pnl_pct, size_usd, paper, source, exit_reason,
                  score, hourly, chg_pct, mc, liq, rug_risk,
                  trailing_tp_activated, smart_money_confirmed,
-                 hour_utc, day_of_week, address, entry, tx_buy, tx_sell, peak_pnl_pct)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 hour_utc, day_of_week, address, entry, tx_buy, tx_sell, peak_pnl_pct,
+                 filter_regime)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (now.isoformat(), sym, addr, WALLET, entry, exit_p,
                  pnl_usd, pnl_pct, sol_spent, 1 if paper else 0,
                  source, exit_reason,
@@ -356,7 +409,8 @@ class Database:
                  1 if kwargs.get("trailing_tp") else 0,
                  1 if kwargs.get("smart_money") else 0,
                  now.hour, now.weekday(), addr, entry,
-                 tx_buy, tx_sell, kwargs.get("peak_pnl_pct")))
+                 tx_buy, tx_sell, kwargs.get("peak_pnl_pct"),
+                 kwargs.get("filter_regime", CFG.get("filter_regime", "unknown"))))
             # Update daily PnL tracker
             today = now.strftime("%Y-%m-%d")
             self.conn.execute("""
@@ -1145,7 +1199,8 @@ class TradeExecutor:
             score=sig.score, hourly=sig.hourly, chg_pct=sig.chg_pct,
             mc=sig.mc, liq=sig.liq, trailing_tp=trail_armed,
             smart_money=sig.source.startswith("copy_"),
-            peak_pnl_pct=peak_pnl_pct)
+            peak_pnl_pct=peak_pnl_pct,
+            filter_regime=CFG["filter_regime"])
         self.db.record_signal_result(sig.source, won, pnl_usd)
 
         # Set cooldown for this token
@@ -1272,12 +1327,16 @@ async def _trade_wrapper(session, executor, sig, bal, active_addrs, db,
 
 
 async def main():
+    _apply_startup_config_overrides()
+
     log.info("=" * 60)
     log.info("  Lazarus v3.0 — Target: $20,000")
     log.info(f"  Wallet : {WALLET}")
     log.info(f"  Mode   : {'PAPER' if PAPER else 'LIVE'}")
-    log.info(f"  Filters: chg {CFG['min_chg_pct']}-{CFG['max_chg_pct']}% | "
-             f"liq >${CFG['min_liq']:,.0f} | SL {(1-CFG['stop_loss'])*100:.0f}% | "
+    log.info(f"  Filters: vol >={CFG['min_hourly_vol']:.0f} | "
+             f"chg {CFG['min_chg_pct']}-{CFG['max_chg_pct']}% | "
+             f"liq >${CFG['min_liq']:,.0f} | regime {CFG['filter_regime']} | "
+             f"SL {(1-CFG['stop_loss'])*100:.0f}% | "
              f"hard floor {(1-CFG['hard_floor'])*100:.0f}%")
     log.info("=" * 60)
 
@@ -1334,6 +1393,12 @@ async def main():
 
         while True:
             cycle += 1
+            if cycle == 1 or cycle % 30 == 0:
+                log.info(
+                    f"Runtime filters: vol >={CFG['min_hourly_vol']:.0f} | "
+                    f"chg {CFG['min_chg_pct']}-{CFG['max_chg_pct']}% | "
+                    f"liq >${CFG['min_liq']:,.0f} | regime {CFG['filter_regime']}"
+                )
             bridge.scan_started(cycle)
 
             try:

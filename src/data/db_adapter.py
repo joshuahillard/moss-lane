@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS trades (
     rug_risk TEXT, trailing_tp_activated INTEGER DEFAULT 0,
     smart_money_confirmed INTEGER DEFAULT 0, hour_utc INTEGER,
     day_of_week INTEGER, address TEXT, entry DOUBLE PRECISION,
-    tx_buy TEXT, tx_sell TEXT, peak_pnl_pct DOUBLE PRECISION
+    tx_buy TEXT, tx_sell TEXT, peak_pnl_pct DOUBLE PRECISION,
+    filter_regime TEXT DEFAULT 'unknown'
 );
 
 CREATE TABLE IF NOT EXISTS signal_performance (
@@ -130,7 +131,8 @@ CREATE TABLE IF NOT EXISTS trades (
     rug_risk TEXT, trailing_tp_activated INTEGER DEFAULT 0,
     smart_money_confirmed INTEGER DEFAULT 0, hour_utc INTEGER,
     day_of_week INTEGER, address TEXT, entry REAL,
-    tx_buy TEXT, tx_sell TEXT, peak_pnl_pct REAL
+    tx_buy TEXT, tx_sell TEXT, peak_pnl_pct REAL,
+    filter_regime TEXT DEFAULT 'unknown'
 );
 CREATE TABLE IF NOT EXISTS signal_performance (
     source TEXT PRIMARY KEY, wins INTEGER DEFAULT 0,
@@ -267,8 +269,9 @@ class DatabaseAdapter:
                  pnl_usd, pnl_pct, size_usd, paper, source, exit_reason,
                  score, hourly, chg_pct, mc, liq, rug_risk,
                  trailing_tp_activated, smart_money_confirmed,
-                 hour_utc, day_of_week, address, entry, tx_buy, tx_sell, peak_pnl_pct)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 hour_utc, day_of_week, address, entry, tx_buy, tx_sell, peak_pnl_pct,
+                 filter_regime)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (now.isoformat(), sym, addr, wallet, entry, exit_p,
                  pnl_usd, pnl_pct, sol_spent, 1 if paper else 0,
                  source, exit_reason,
@@ -279,7 +282,8 @@ class DatabaseAdapter:
                  1 if kwargs.get("trailing_tp") else 0,
                  1 if kwargs.get("smart_money") else 0,
                  now.hour, now.weekday(), addr, entry,
-                 tx_buy, tx_sell, kwargs.get("peak_pnl_pct")))
+                 tx_buy, tx_sell, kwargs.get("peak_pnl_pct"),
+                 kwargs.get("filter_regime", "unknown")))
 
             today = now.strftime("%Y-%m-%d")
             if self.backend == "postgres":
