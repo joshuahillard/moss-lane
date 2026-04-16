@@ -172,6 +172,12 @@ SQL queries used strftime('%s','2026-03-29T17:44:00') to compare against the tim
 - **Working branch:** `codex/stabilize-20260416` (published on origin). Snapshot preserved at `snapshot/pre-stabilize-20260416`.
 - **Execution artifacts:** `docs/sprints/PHASE_0_STABILIZE_CHECKLIST_20260416.md` (Codex), `docs/sprints/PHASE_0_DOC_HANDOFF.md` (Claude cadence), `docs/sprints/PHASE_0_EXECUTION_LOG.md` (commit-by-commit audit trail).
 
+**2026-04-16 — Phase 6 Server Reality Check (close-out):**
+- **Stoic Gate contradiction resolved from production evidence.** Read-only query against a copied production SQLite DB (`/home/solbot/lazarus/logs/lazarus_phase6_readonly.db`, copied from `lazarus.db`) returned the authoritative post-epoch paper-mode result: **25 sells** since `2026-03-29T17:44:00`, gross profit **$1,239.15**, gross loss **$815.14**, **profit factor 1.520**, **net PnL $424.01**, **avg PnL 1.74%**, **win rate 36.0%**. Phase 6 pre-flight (checklist + re-baseline) committed as `eba3b8b`.
+- **Schema confirmed safe for v3.2 cohort analysis.** `trades.side` and `trades.filter_regime` both exist on the production DB copy. Two Phase 1 risk-register items (query pack `filter_regime` assumption; sell-side labeling compatibility) are now closed by evidence, not assumption.
+- **Tracker + memory reconciled.** `ops/config/go_live_tracker.md` gained a Day 10 2026-04-16 authoritative block citing PF 1.520. Stale memories (`project_stoic_gate_cleared.md` claiming PF 1.73, `project_stoic_gate_unverified.md` flagging the contradiction) were retired and replaced by a single `project_stoic_gate_verified.md`. The 1.73 figure was a drifted recollection of the 1.74% avg PnL; the +43.54% cumulative figure was never corroborated and is retired. Any future go-live decision note must cite PF 1.520, never 1.73.
+- **Read-only boundary held.** Unlike Phase 5's commit `649a677` (which bundled a `startup_config.py` refactor inside a "test unblocking" commit), Phase 6 executed inside its scope: no writes, no migrations, no schema changes to production. Stoic Gate count threshold (20) is cleared at 25 — next gate is a go-live decision date, not more tuning. Execution artifacts: `docs/sprints/PHASE_6_SERVER_REALITY_CHECK_CHECKLIST_20260416.md` (checklist), `docs/sprints/PHASE_6_EXECUTION_LOG.md` (evidence + reconciliation audit trail). Open debt: Phase 1 SHA back-fill (port + redirect-stub commits still carry `<port commit hash — pending>` placeholders in `PHASE_1_EXECUTION_LOG.md`).
+
 ---
 
 ## Architecture Decision Log

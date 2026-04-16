@@ -151,3 +151,28 @@ The re-baseline landed the corrections that needed to land. The checklist is sou
 ### Entry rule going forward
 
 No further persona-packet speculation until the Phase 6 query output is on paper. Planning memory that cites trade counts, PF values, or Stoic Gate status is frozen at "unverified" until Step 7 of the checklist runs.
+
+---
+
+## Phase 6 pre-flight commit — 2026-04-16
+
+- **Outcome:** Landed the Phase 6 pre-flight documentation in the canonical repo before any server execution.
+- **Evidence:** The re-baseline log and server reality check checklist are now committed and pushed on `codex/stabilize-20260416`; branch history independently verified to match the claimed Phase 0–5 commit map through `649a677`.
+- **Files changed:** `docs/sprints/PHASE_5_EXECUTION_LOG.md`, `docs/sprints/PHASE_6_SERVER_REALITY_CHECK_CHECKLIST_20260416.md`
+- **Commit hash:** `eba3b8b`
+- **Next gate:** Execute the read-only Phase 6 server checklist against the real VPS host and repo path.
+
+### Auditor notes on verification boundary
+
+Codex surfaced an important honesty flag that belongs on paper: repo-facing claims were independently verified on the Codex side (git history, file presence, commit landing). Claude-side memory/index updates (`project_phase_0_5_commits_20260416.md`, the `MEMORY.md` pointer addition) were **not** verified from the repo workspace. Those edits are Claude-side state, not git-backed evidence.
+
+That distinction is correct and worth institutionalizing: the audit trail has two surfaces, and only one of them lives in git. Claude's memory is not a source of truth for anyone but Claude — it is context for future sessions. The repo is the shared source of truth. Anything a future reviewer needs to rely on must live in the repo.
+
+**Implication for Phase 6 close-out:** the Step 7 tracker/memory update needs to write the authoritative Stoic Gate number into **both** surfaces — the repo-side `ops/config/go_live_tracker.md` (git-backed, shared) AND the relevant memory file (Claude-side context). The repo update is the authoritative record; the memory update is the behavioral correction so future sessions recall correctly.
+
+### Still-blocked list going into execution
+
+- Real SSH host alias / IP (pre-rebrand memory has `64.176.214.96` via `ssh -i C:\Users\joshb\sol_new root@...` — unverified for current state)
+- Real repo path on the VPS (pre-rebrand memory has `/home/solbot/lazarus/` — unverified)
+
+Claude is holding rather than generating a command block with placeholders. When Josh supplies the two values, Claude generates the zero-placeholder block against the committed checklist at `eba3b8b`.

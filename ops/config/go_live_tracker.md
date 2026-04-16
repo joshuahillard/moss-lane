@@ -196,6 +196,25 @@ See `MD/trades/Cohort_Analysis_2026-04-01.md` for full statistical breakdown.
 - New decision date: **not set yet**. It will be assigned only after the server reality check runs on the repo-safe legacy query pack.
 - Cohort-of-record rule: future decision metrics must cite one regime or inferred cohort explicitly; mixed-regime summaries are diagnostic only.
 
+### Day 10 — 2026-04-16 (Server reality check, authoritative)
+
+Read-only verification was run against a copied production SQLite DB file created from `/home/solbot/lazarus/logs/lazarus.db`. Schema probe confirmed `trades.side` and `trades.filter_regime` both exist on the server copy.
+
+Authoritative post-epoch paper-mode result:
+- 25 sells since `2026-03-29T17:44:00`
+- Gross profit: $1239.15
+- Gross loss: $815.14
+- Profit factor: **1.520**
+- Net PnL: $424.01
+- Avg PnL: 1.74%
+- Win rate: 36.0%
+
+This resolves the prior contradiction:
+- Tracker value "7 / PF 1.42" was stale / incorrect
+- Memory value "25 / PF 1.73" was partially correct on trade count but incorrect on profit factor (most likely a drifted recollection of the 1.74% average PnL)
+
+**Status:** Stoic Gate count threshold is confirmed cleared on production evidence. Any future decision note must cite PF 1.520, not 1.73.
+
 ### DECISION DAY — 2026-04-07 (extended from April 3)
 - Final Trades: — | Final WR: — | Final PF: —
 - **GO / NO-GO:** Lapsed without recorded decision
