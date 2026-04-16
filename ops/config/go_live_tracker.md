@@ -247,6 +247,19 @@ Exit-reason distribution confirms the asymmetry:
 
 Authoritative records: `github-repo/docs/sprints/PHASE_6_EXECUTION_LOG.md` (aggregate and cohort queries, Step 5), commit `0e67552` (aggregate reconciliation), forthcoming Phase 6 cohort close-out commit, and `github-repo/docs/sprints/SPRINT_7_COHORT_EVIDENCE.md` (Sprint 7 charter).
 
+### Day 10 addendum - 2026-04-16 Gate 7A execution status
+
+**Gate 7A status: `startup parity restored; tagged-trade verification pending`.**
+
+Blocker class: operational integrity (deployment parity), not strategy quality. Full execution narrative - failure evidence, deploy-drift diagnosis, sync-over-hotfix decision, parity restoration - is recorded in `docs/sprints/SPRINT_7_EXECUTION_LOG.md`.
+
+- **Pre-sync state:** Restart with `bot_config` set to `original` produced a banner advertising `chg 10.0-100.0% | liq >$30,000`. Runtime did not match DB intent.
+- **Root cause:** VPS runtime drift. `/home/solbot/lazarus/lazarus.py` lacked `apply_startup_config_overrides`; `/home/solbot/lazarus/startup_config.py` was missing; deployed `record_trade()` did not write `filter_regime`.
+- **Remediation:** Full runtime sync of `/home/solbot/lazarus/lazarus.py` and `/home/solbot/lazarus/startup_config.py` from `codex/stabilize-20260416`. Backup at `/home/solbot/lazarus/backup_runtime_sync_20260416_181311`. `config_defaults.py` was not deployed to the VPS runtime path - repo/default alignment is a separate repo concern.
+- **Post-sync state:** Startup banner now reports `Filters: vol >=400 | chg 10.0-80.0% | liq >$50,000 | regime original`. Five of six Gate 7A checks pass.
+- **Sprint 7 evidence cutoff:** `2026-04-16 18:13:33 UTC`. No sells before that timestamp count toward Gate 7B.
+- **Residual closure condition:** First post-restart trade row after `2026-04-16 18:13:33 UTC` must carry `filter_regime = 'original'`. Until that row exists, Gate 7B remains paused and no sells count toward the 20-sell cohort-of-record target.
+
 ### DECISION DAY — 2026-04-07 (extended from April 3)
 - Final Trades: — | Final WR: — | Final PF: —
 - **GO / NO-GO:** Lapsed without recorded decision

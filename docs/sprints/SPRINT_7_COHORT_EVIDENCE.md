@@ -105,6 +105,24 @@ Gates are ordered. Evidence from a later gate does not count until the earlier o
 
 **This is the center of gravity of the charter.** Everything that happens after Gate 7A is conditional on it closing cleanly. If Gate 7A is not closed, **Sprint 7 has not started** — regardless of what the calendar says.
 
+#### Gate 7A status - 2026-04-16
+
+**Status: `startup parity restored; tagged-trade verification pending`.**
+
+Gate 7A execution history is recorded in `docs/sprints/SPRINT_7_EXECUTION_LOG.md` (F1 failure -> F2 diagnosis -> F3 parity restoration -> F4 startup parity proven). Summary:
+
+- **7A.F1 - Failure:** Initial restart after `bot_config` was set to `original` produced a startup banner advertising `chg 10.0-100.0% | liq >$30,000`. Runtime truth did not match DB intent.
+- **7A.F2 - Diagnosis:** VPS inspection found deployed-code drift, not a DB-config mistake. `/home/solbot/lazarus/lazarus.py` lacked `apply_startup_config_overrides`; `/home/solbot/lazarus/startup_config.py` was missing; deployed `record_trade()` did not write `filter_regime`. Decision recorded: full runtime sync over manual hotfix.
+- **7A.F3 - Parity restoration:** Runtime sync of `/home/solbot/lazarus/lazarus.py` and `/home/solbot/lazarus/startup_config.py` completed at `2026-04-16 18:13:33 UTC`. Backup at `/home/solbot/lazarus/backup_runtime_sync_20260416_181311`. `py_compile` passed, service restarted healthy. Note: `config_defaults.py` was not deployed to the VPS runtime path; repo/default alignment remains a separate repo concern.
+- **7A.F4 - Startup parity proven:** Post-sync banner now reports `Filters: vol >=400 | chg 10.0-80.0% | liq >$50,000 | regime original`. Startup-config log lines confirm all seven `original` parameters were read from `bot_config` and applied.
+
+**Sprint 7 evidence cutoff:** No sells with `timestamp < '2026-04-16T18:13:33'` count toward Gate 7B, regardless of `filter_regime` tag.
+
+**Residual closure condition:** Check 6 (first-trade tag verification) remains pending. Gate 7A is not fully closed until the first post-restart trade row after `2026-04-16 18:13:33 UTC` is shown to carry `filter_regime = 'original'`. Until that row exists and is logged, Gate 7B remains paused and no sells count toward the 20-sell cohort-of-record target.
+
+If the first post-restart trade row carries any `filter_regime` other than `'original'`, that opens a new Gate 7A failure branch specifically for the trade-write path, and Sprint 7 re-pauses.
+
+
 #### 7A required checks — all six must pass
 
 | # | Check | Method | Pass condition | Evidence to capture |
