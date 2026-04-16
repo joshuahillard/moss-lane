@@ -1,13 +1,13 @@
 .headers on
 .mode column
 
--- Wide-Net v2 Query Pack (Legacy-Safe Default)
+-- Wide-Net v2 Query Pack (Explicit Legacy Naming)
 -- Usage on server:
---   sqlite3 /home/solbot/lazarus/logs/lazarus.db < /path/to/WIDE_NET_V2_QUERY_PACK.sql
+--   sqlite3 /home/solbot/lazarus/logs/lazarus.db < /path/to/WIDE_NET_V2_QUERY_PACK_LEGACY.sql
 --
--- This default pack is safe on pre-v3.2 databases that do not yet have
--- trades.filter_regime. Use WIDE_NET_V2_QUERY_PACK_V32.sql after the
--- filter_regime migration lands and runtime tagging is live.
+-- Safe on pre-v3.2 databases that do not yet have trades.filter_regime.
+-- Use WIDE_NET_V2_QUERY_PACK_V32.sql after the filter_regime migration
+-- lands and runtime tagging is live.
 --
 -- All queries are post-epoch, paper-mode only.
 

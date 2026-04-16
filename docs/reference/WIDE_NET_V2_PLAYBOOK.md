@@ -52,12 +52,12 @@ Wide-Net v2 should:
 
 ## Cohort Tracking Note
 
-Existing server-side `filter_regime` wiring may continue to label trades as `original` or `wide_net_v1`. For `wide_net_v2` monitoring, use inferred cohorts in SQL:
+Pre-v3.2 databases do not have a guaranteed `filter_regime` column. For `wide_net_v2` monitoring before the v3.2 migration lands, use inferred cohorts in SQL:
 
 - `original_window`: `chg_pct >= 10 AND chg_pct < 80 AND liq >= 50000`
 - `wide_net_v2_expansion`: `chg_pct >= 10 AND chg_pct < 100 AND liq >= 30000`, but not already in `original_window`
 
-This preserves historical labels while still isolating the v2 experiment.
+This preserves truthful cohort analysis before schema migration. After the v3.2 migration lands and runtime tagging is live, switch to the explicit `filter_regime` query pack for actual regime labels.
 
 ## VPS Deployment Note
 
@@ -138,4 +138,6 @@ Interpret `wide_net_v2` as:
 - Deploy script (DB-only validator): `deploy/lazarus_deploy_widenet_v2.sh`
 - Deploy script (actual VPS switch): `deploy/lazarus_deploy_widenet_v2_code_db.sh`
 - Deploy script (v3.2 low-volume epoch): `deploy/lazarus_deploy_v32_lowvol_epoch.sh`
-- Query pack: `docs/reference/WIDE_NET_V2_QUERY_PACK.sql`
+- Query pack (default, legacy-safe): `docs/reference/WIDE_NET_V2_QUERY_PACK.sql`
+- Query pack (explicit legacy naming): `docs/reference/WIDE_NET_V2_QUERY_PACK_LEGACY.sql`
+- Query pack (post-migration, uses `filter_regime`): `docs/reference/WIDE_NET_V2_QUERY_PACK_V32.sql`
