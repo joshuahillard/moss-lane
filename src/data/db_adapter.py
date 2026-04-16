@@ -31,6 +31,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, Optional, List
 
+try:
+    from .migration_runner import apply_migrations
+except ImportError:
+    from migration_runner import apply_migrations
+
 log = logging.getLogger("fort_v2")
 
 DB_BACKEND = os.environ.get("DB_BACKEND", "sqlite").lower()
@@ -232,6 +237,8 @@ class DatabaseAdapter:
         else:
             self.conn.executescript(SQLITE_SCHEMA)
             self.conn.commit()
+
+        apply_migrations(self.conn, self.backend, log.info)
 
     # ── Query helpers (handle ? vs %s placeholder difference) ────────────
 
