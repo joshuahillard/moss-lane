@@ -1,8 +1,18 @@
 # Lazarus Go-Live Tracker
 
-## Decision Window: 2026-03-30 → 2026-04-07 (extended at Day 3 checkpoint)
+## Decision Window (Lapsed): 2026-03-30 → 2026-04-07 (extended at Day 3 checkpoint)
 
 **Objective:** Achieve Profit Factor >= 1.5 across 20+ paper trades before committing live capital.
+
+**Current state as of 2026-04-16:** The April 7 decision window has lapsed. The tracker remains the on-disk source of truth for the last verified numbers (`7/20` sells, `PF 1.42`), but the final decision was never recorded and must not be inferred from memory or later narrative docs.
+
+## Reset Rules — 2026-04-16
+
+- The April 7 decision window is **lapsed**, not pending.
+- Cloud Run work from April 8-14 is valid infrastructure progress, but it does not resolve the VPS go-live decision.
+- The paper bot starvation observed on April 15-16 is an operating-state change, not proof that the Stoic Gate was cleared or failed.
+- A new decision date will be set only after the legacy-safe query pack is run against the server DB and the current tracker numbers are reconciled.
+- **Cohort-of-record rule:** any future go-live decision must be based on one explicitly named regime or inferred cohort, not a blended dataset across `original`, `wide_net_v1`, `wide_net_v2`, and `v3.2_lowvol_epoch`.
 
 ---
 
@@ -179,10 +189,17 @@ See `MD/trades/Cohort_Analysis_2026-04-01.md` for full statistical breakdown.
 - Scaled to min-instances=0 after verification (cost control).
 - **Go-live tracker note:** Cloud Run is a Tier 2 portfolio credential, not the go-live target. VPS remains primary for go-live decision. Stoic Gate status unchanged (last reading: 7/20 trades, PF 1.42).
 
+### Day 10 — 2026-04-16 (Tracker reset, not a decision)
+- Decision window status: **LAPSED**. No valid GO / NO-GO was recorded on April 7.
+- Gap acknowledgment: April 8-14 focused on Cloud Run, Cloud SQL, and health-check work; those are portfolio and platform milestones, not paper-trading decision evidence.
+- Market-state acknowledgment: April 15-16 logs show the scanner was alive but starved, which motivated the proposed `v3.2_lowvol_epoch` experiment.
+- New decision date: **not set yet**. It will be assigned only after the server reality check runs on the repo-safe legacy query pack.
+- Cohort-of-record rule: future decision metrics must cite one regime or inferred cohort explicitly; mixed-regime summaries are diagnostic only.
+
 ### DECISION DAY — 2026-04-07 (extended from April 3)
 - Final Trades: — | Final WR: — | Final PF: —
-- **GO / NO-GO:** (pending — decision date has passed, needs rescheduling based on updated trade count)
-- Rationale: (pending)
+- **GO / NO-GO:** Lapsed without recorded decision
+- Rationale: The calendar date passed before the tracker was reconciled with later claims, and no final server-side reality check was captured on disk.
 
 ---
 
@@ -205,5 +222,5 @@ See `MD/trades/Cohort_Analysis_2026-04-01.md` for full statistical breakdown.
 
 ---
 
-*Tracker maintained by TPM Meta-Persona. Updated daily through decision window.*
+*Tracker maintained by TPM Meta-Persona. Updated at decision checkpoints and evidence resets.*
 *QA Validation Architect signs off on metric trustworthiness before Go-Live.*
