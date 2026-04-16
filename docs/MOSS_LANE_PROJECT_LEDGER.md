@@ -106,7 +106,7 @@ V3.1 epoch was stored with space format ("2026-03-29 17:44:00") but DB writes T-
 - Full 5-module pipeline built: scanner_coordinator, fund_splitter, tax_vault, wallet_generator, lazarus.py patches
 - 36 tests for fund_splitter (all passing)
 - Feature-flagged, not yet deployed
-- Ceal Sprint 4 shipped (Docker + Jobs fix, 208 tests)
+- Ceal Sprint 6 shipped (Docker + Cloud SQL, 208 tests)
 
 **2026-04-03 — Stoic Gate Cleared:**
 - 25 post-epoch sells confirmed. PF 1.73, +43.54% cumulative
@@ -132,6 +132,38 @@ SQL queries used strftime('%s','2026-03-29T17:44:00') to compare against the tim
 - Local validation gap recorded: `pytest` collection currently breaks because `test_foundation.py` exits during collection and expects dependencies/secrets not present in the local environment
 - Current-state docs anchored to the latest available workspace evidence rather than inferred future status
 
+### Cloud Run Deployment (2026-04-08)
+
+**Deployed:** 2026-04-08 15:23 UTC. Revision lazarus-00013-2nf serving on Cloud Run us-east1.
+**What shipped:**
+- Fresh Docker image (v3.1 tag) built and pushed to Artifact Registry (us-east1-docker.pkg.dev/moss-lane/lazarus/lazarus:v3.1)
+- Cloud Run service deployed with Secret Manager references (SOLANA_PRIVATE_KEY, SOLANA_RPC_URL, BIRDEYE_API_KEY)
+- CRLF line-ending fix added to Dockerfile (sed strip + chmod on entrypoint.sh) — self-healing for Windows→Linux builds
+- Startup metrics: image import 1.22s, container healthy 2.95s, revision ready 4.84s
+- Bot confirmed running: DexScreener scanned 205 tokens, 0 candidates passed filters (tight filters working)
+- Scaled to min-instances=0 after verification (cost control — portfolio demo, not production)
+
+**Issues found:**
+- CRLF in entrypoint.sh caused first deploy attempt to fail (revision 00012). Fixed with Dockerfile sed line.
+- Bot started in LIVE mode, not PAPER — PAPER_TRADING env var not picked up because lazarus.py reads mode from bot_config DB table (runtime source of truth), and Cloud Run has no persistent SQLite. Falls back to code default (LIVE). No trades executed ($2.66 wallet, 0 candidates). Needs fix before next Cloud Run session.
+- Learning engine import failed: `No module named 'learning_engine'` — path changed to src.engine.learning_engine in package restructure. Non-critical for portfolio demo.
+
+**Purpose:** Portfolio piece (Tier 2 credential: containerized service on GCP). VPS remains primary. Go-live still targets VPS.
+
+**GCP infrastructure confirmed pre-existing:** Project moss-lane, Artifact Registry repo lazarus (us-east1), Secret Manager secrets (4 created 4/1-4/2), Cloud Run + AR + SM APIs enabled. All from prior 4/1 session.
+
+**Effort:** Medium
+
+**X-Y-Z:** "Deployed Lazarus trading engine to GCP Cloud Run, as measured by verified live revision with structured logging and 4.84s cold start, by containerizing the service with Secret Manager integration and Artifact Registry delivery."
+
+**2026-04-15 — v3.2 Low-Volume Epoch Bump:**
+- Service health check confirmed the bot was alive but filter-starved: `610` scan/candidate log lines in 6 hours, `0` entry lines, and no new trades since 2026-04-03
+- Trade schema audit confirmed `trades.side` is the correct action field and that `filter_regime` is already stored on historical rows
+- Live filter evidence showed persistent starvation at the first gate: roughly `118-123` of `200` tokens dying on `vol` and `62-66` dying on `chg_low` every cycle
+- A legitimate runner was visibly clipped by the upper ceiling: `stoat hit 284.0% h1` while `max_chg_pct=100.0` was active
+- New paper-only mini-epoch defined: `epoch_v32_lowvol` with runtime profile `min_hourly_vol=250`, `min_chg_pct=10.0`, `max_chg_pct=120.0`, `min_liq=30000`, `min_vmr=0.10`, `filter_regime=v3.2_lowvol_epoch`
+- Deploy ceremony upgraded: backup + patch + py_compile + restart + health check + 2-hour rollback watch window if candidate flow stays frozen
+
 ---
 
 ## Architecture Decision Log
@@ -149,6 +181,8 @@ SQL queries used strftime('%s','2026-03-29T17:44:00') to compare against the tim
 | ADR-9 | Feature-flagged dispatcher | 2026-04-02 | Build ahead while market frozen, zero risk | Wait for Go-Live to start | Active |
 | ADR-10 | Three-layer prompt architecture | 2026-04-04 | Old sprint prompts were 5-20KB of repeated context | Single monolithic prompt | Active |
 | ADR-11 | Runtime-truth labeling (`deployed` vs `repo-built` vs `planned`) | 2026-04-07 | Project now contains meaningful future-state modules that can blur current capability if not labeled clearly | Let docs imply capability from code presence alone | Active |
+| ADR-12 | Dockerfile sed fix for CRLF (self-healing) | 2026-04-08 | Windows Git writes CRLF to entrypoint.sh, Linux container can't parse \r | .gitattributes eol=lf, manual dos2unix | Active |
+| ADR-13 | Cloud Run min-instances=0 for portfolio demo | 2026-04-08 | Always-on instance ~$36/mo for a demo is wasteful | min-instances=1 (always on), scale manually | Active |
 
 ---
 
@@ -161,7 +195,10 @@ SQL queries used strftime('%s','2026-03-29T17:44:00') to compare against the tim
 | TD-003 | Dispatcher modules not deployed or integration-tested | 2026-04-02 | High | Open | 5 modules built locally, server only has single-wallet engine |
 | TD-004 | Wide-net filters active in bot_config | 2026-04-01 | High | Open | Must revert to tight filters before Go-Live |
 | TD-005 | No Alembic/migration system | 2026-03 | Medium | Open | Schema changes are manual SQL |
-| TD-006 | fort_v2.log still named with old convention | 2026-03-28 | Low | Open | Log file name not rebranded |
+| TD-006 | `lazarus.py` hardcoded `min_hourly_vol=800` disagrees with playbook (`400`) and DB runtime truth | 2026-04-15 | High | Open | Reconcile the engine, repo defaults, and operating docs to one authoritative default path |
+| TD-007 | fort_v2.log still named with old convention | 2026-03-28 | Low | Open | Log file name not rebranded |
+| TD-008 | Cloud Run PAPER_TRADING env var not respected | 2026-04-08 | High | Open | Bot reads mode from bot_config DB (no persistent SQLite on CR). Need code-level env var override or init script. |
+| TD-009 | Learning engine import path broken in Docker | 2026-04-08 | Medium | Open | `import learning_engine` fails — needs `from src.engine import learning_engine` or sys.path fix |
 
 ---
 
@@ -173,6 +210,7 @@ SQL queries used strftime('%s','2026-03-29T17:44:00') to compare against the tim
 | 2026-03-29 | Epoch Format Mismatch | 2 pre-epoch trades leaked into learning | T-format ISO across all files | Rule #17 (Timestamp Format) |
 | 2026-03-29 | Ghost Trade Bug | Learning engine poisoned, self-reg death spiral | Stoic Gate + Ghost Trap + epoch filter | Rule #13 (Stoic Gate) |
 | 2026-04-03 | Epoch Query Data Leak | Reported -690% instead of +43.54% | Text comparison, not strftime | Rule #17 addendum |
+| 2026-04-08 | CRLF Entrypoint Crash | Cloud Run revision failed startup — bash couldn't parse \r | Dockerfile sed -i 's/\r$//' + chmod | Self-healing build step (ADR-12) |
 
 ---
 *Modeled after Ceal Project Ledger pattern*
