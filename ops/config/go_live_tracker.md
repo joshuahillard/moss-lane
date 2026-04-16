@@ -215,6 +215,38 @@ This resolves the prior contradiction:
 
 **Status:** Stoic Gate count threshold is confirmed cleared on production evidence. Any future decision note must cite PF 1.520, not 1.73.
 
+### Day 10 — 2026-04-16 (Cohort-level Stoic Gate outcome, decision-grade)
+
+The aggregate post-epoch result (25 sells / PF 1.520) cleared the Stoic Gate count threshold, but cohort decomposition on the same copied DB shows the aggregate is being carried by one regime, not earned evenly.
+
+Cohort-level result from `/home/solbot/lazarus/logs/lazarus_phase6_readonly.db`:
+
+| Cohort | Sells | PF | Net PnL | Avg PnL | WR | Confidence band |
+|---|---|---|---|---|---|---|
+| `original` | 10 | **2.18** | +$443.82 | 3.95% | 50.0% | Decision-grade (≥5-sell rule) |
+| `wide_net_v1` | 15 | **0.955** | -$19.81 | 0.27% | 26.7% | Decision-grade (≥5-sell rule) |
+| `v3.2_lowvol_epoch` | 0 | — | — | — | — | Unvalidated — zero production evidence |
+
+Exit-reason distribution confirms the asymmetry:
+- `original` take-profits landed 2 sells for +$710.41 (28.42% avg). Losses are concentrated in `sniper_timeout` (5 sells, -$99.50) and one `emergency_rug` (-$187.00).
+- `wide_net_v1` `sniper_timeout` dominates: 10 sells for -$259.02. The single take-profit (+$314.27) does not offset accumulated losses.
+
+**Interpretation:**
+- The "Stoic Gate cleared" framing from the aggregate is true in the count-only sense but not in the decision-grade sense. The aggregate is carried by `original`.
+- `original` looks genuinely promising (PF 2.18, WR 50.0%) but with only 10 sells is **below the 20-sell gate** if treated as the cohort-of-record. More evidence is needed before the gate clears on the right cohort.
+- `wide_net_v1` is **formally rejected for go-live purposes** on this evidence. It remains permitted in paper mode only as a negative-control cohort and regime-detection signal. Reinstatement as a go-live candidate requires a new sprint decision — it cannot be reinstated by running totals alone and cannot be reinstated implicitly by being left in the default config.
+- `v3.2_lowvol_epoch` remains unvalidated — zero production-evidence trades. It is held as a starvation fallback, not a co-equal primary.
+
+**Decision:**
+- No go-live date is being set on this evidence.
+- Sprint 7 (cohort-of-record evidence, paper-mode) opens 2026-04-16 with runtime-truth-first discipline.
+- Primary cohort-of-record: `original`. Secondary / shadow: `v3.2_lowvol_epoch`, held as a starvation fallback.
+- Gate order: (7A) runtime truth verification before any evidence counts; (7B) 20-sell / PF ≥ 1.5 gate on `original`; (7C) fallback promotion of `v3.2_lowvol_epoch` only on ≥24h starvation.
+- Interim operational-integrity checkpoint: **2026-04-20**.
+- Decision-review date: **2026-04-23**. This is explicitly a decision-review date, not a go-live date. Sprint 7 does not close by silent fade — only by explicit decision recorded in the charter.
+
+Authoritative records: `github-repo/docs/sprints/PHASE_6_EXECUTION_LOG.md` (aggregate and cohort queries, Step 5), commit `0e67552` (aggregate reconciliation), forthcoming Phase 6 cohort close-out commit, and `github-repo/docs/sprints/SPRINT_7_COHORT_EVIDENCE.md` (Sprint 7 charter).
+
 ### DECISION DAY — 2026-04-07 (extended from April 3)
 - Final Trades: — | Final WR: — | Final PF: —
 - **GO / NO-GO:** Lapsed without recorded decision
