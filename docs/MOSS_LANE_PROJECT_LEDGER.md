@@ -164,6 +164,14 @@ SQL queries used strftime('%s','2026-03-29T17:44:00') to compare against the tim
 - New paper-only mini-epoch defined: `epoch_v32_lowvol` with runtime profile `min_hourly_vol=250`, `min_chg_pct=10.0`, `max_chg_pct=120.0`, `min_liq=30000`, `min_vmr=0.10`, `filter_regime=v3.2_lowvol_epoch`
 - Deploy ceremony upgraded: backup + patch + py_compile + restart + health check + 2-hour rollback watch window if candidate flow stays frozen
 
+**2026-04-16 — Phase 0 Repo Stabilization (close-out):**
+- **Repo stabilized.** CRLF-only churn was removed from the working tree and isolated into a single normalization commit (`57342ab`, 16 files, zero semantic change). Line-ending policy is now enforced by `.gitattributes`.
+- **Old backlog pushed.** The pre-existing local `main` commit backlog was pushed to `origin/main` (landing at `1d96c69`) before any new work resumed, so the v3.2 stabilization work sits on top of a clean base.
+- **v3.2 work separated into focused commits.** Engine/runtime support (`lazarus.py`, `db_adapter.py`, `config_defaults.py` — commit `f6cd79f`) and deploy artifacts + research docs (`lazarus_deploy_v32_lowvol_epoch.sh`, two supporting wide-net deploy scripts, `WIDE_NET_V2_PLAYBOOK.md`, `WIDE_NET_V2_QUERY_PACK.sql`, repo-side ledger — commit `b816e0e`) are now independently reviewable rather than mixed into line-ending noise.
+- **Canonical source-of-truth edits deferred.** No ledger-body or tracker-body edits about v3.2 performance, Stoic Gate reconciliation, or cohort numbers land in Phase 0. The repo-vs-root documentation canonicalization decision is Phase 1; the server reality check (tracker contradiction at 7/20 PF 1.42 vs memory's 25/1.73) is Phase 6; the query pack `filter_regime` schema-compatibility split is Phase 2.
+- **Working branch:** `codex/stabilize-20260416` (published on origin). Snapshot preserved at `snapshot/pre-stabilize-20260416`.
+- **Execution artifacts:** `docs/sprints/PHASE_0_STABILIZE_CHECKLIST_20260416.md` (Codex), `docs/sprints/PHASE_0_DOC_HANDOFF.md` (Claude cadence), `docs/sprints/PHASE_0_EXECUTION_LOG.md` (commit-by-commit audit trail).
+
 ---
 
 ## Architecture Decision Log
