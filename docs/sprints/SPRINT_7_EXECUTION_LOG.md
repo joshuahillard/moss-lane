@@ -77,3 +77,16 @@
   - Post-restart trade query (`timestamp >= '2026-04-16T18:13:33'`) returned `0` rows
 - **Interpretation:** Gate 7A remains open - startup parity proven, tagged-trade verification pending because no post-restart trade rows exist yet. No tagging-mismatch failure has been observed, but the trade-write path is not yet end-to-end proven.
 - **Action:** Re-run the post-restart trade-row query at the next checkpoint or immediately upon the first qualifying close.
+
+## Gate 7A.F4.V2 - Checkpoint at ~58min post-restart (continued healthy-waiting)
+
+- **Outcome:** Continued healthy-waiting. No post-restart trade rows yet; runtime remains on `original` with no drift across four re-log samples.
+- **Evidence (VPS, 2026-04-16 19:12 UTC):**
+  - `systemctl status lazarus`: active since `2026-04-16 18:13:32 UTC`; 58 min uptime
+  - Runtime `regime original` re-confirmed at `18:13:33`, `18:30:47`, `18:48:27`, `19:06:16` - banner format preserved across all four samples
+  - Cycle count advanced from 25 (F4.V1) to 100; ~75 cycles in ~45 min
+  - Filter funnel stable: `200 -> 0` per cycle; vol `~125-130` and chg_low `~57-63` dominant rejections
+  - Post-restart trade query (`timestamp >= '2026-04-16T18:13:33'`) returned `0` rows; regime distribution query returned `0` rows
+- **Origin parity:** `c500cd2` pushed to `origin/codex/stabilize-20260416`; local and origin in sync.
+- **Interpretation:** Gate 7A remains open. Same interpretation as F4.V1; no new failure signal. `original` regime is selective enough that zero candidates have cleared the funnel in 58 min. Scanner health and regime stability independently re-verified.
+- **Action:** Re-run the post-restart trade-row query at the next checkpoint or immediately upon the first qualifying close. Codex handoff for this gate: `docs/sprints/SPRINT_7_CODEX_HANDOFF_20260416.md`.
