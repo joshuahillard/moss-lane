@@ -17,13 +17,22 @@ import unittest
 import asyncio
 import logging
 from unittest.mock import Mock, patch, AsyncMock
-from fund_splitter import (
-    FundSplitter,
-    FundSplitterConfig,
-    AllocationMode,
-    RpcFundTransfer,
-    build_fund_split_instructions,
-)
+try:
+    from fund_splitter import (
+        FundSplitter,
+        FundSplitterConfig,
+        AllocationMode,
+        RpcFundTransfer,
+        build_fund_split_instructions,
+    )
+except ImportError:
+    from src.finance.fund_splitter import (
+        FundSplitter,
+        FundSplitterConfig,
+        AllocationMode,
+        RpcFundTransfer,
+        build_fund_split_instructions,
+    )
 
 
 # Suppress debug logs during testing

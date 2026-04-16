@@ -186,55 +186,10 @@ CFG: Dict = {
 
 PAPER = ENV.get("PAPER_TRADING", "false").lower() == "true"
 
-STARTUP_OVERRIDE_KEYS = {
-    "position_pct",
-    "max_positions",
-    "take_profit",
-    "stop_loss",
-    "trail_arm",
-    "min_hourly_vol",
-    "min_chg_pct",
-    "max_chg_pct",
-    "min_liq",
-    "min_vmr",
-    "filter_regime",
-}
-
-
-def _coerce_cfg_value(key: str, raw: str):
-    current = CFG[key]
-    if isinstance(current, bool):
-        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
-    if isinstance(current, int) and not isinstance(current, bool):
-        return int(float(raw))
-    if isinstance(current, float):
-        return float(raw)
-    return str(raw)
-
-
-def _apply_startup_config_overrides():
-    """Apply bot_config and dynamic_config before the startup banner is emitted."""
-    try:
-        conn = sqlite3.connect(DB_PATH, timeout=5)
-        try:
-            sources = (
-                ("bot_config", conn.execute("SELECT key, value FROM bot_config").fetchall()),
-                ("dynamic_config", conn.execute("SELECT key, value FROM dynamic_config").fetchall()),
-            )
-        finally:
-            conn.close()
-
-        for source_name, rows in sources:
-            for key, value in rows:
-                if key not in STARTUP_OVERRIDE_KEYS:
-                    continue
-                try:
-                    CFG[key] = _coerce_cfg_value(key, value)
-                    log.info(f"Startup config: {key}={CFG[key]} ({source_name})")
-                except Exception as e:
-                    log.warning(f"Startup config parse failed for {key}={value!r}: {e}")
-    except Exception as e:
-        log.warning(f"Startup config override load failed: {e}")
+try:
+    from startup_config import apply_startup_config_overrides
+except ImportError:
+    from src.engine.startup_config import apply_startup_config_overrides
 
 # ── Dynamic virtual balance for paper mode ──────────────────────────────
 V31_EPOCH_TS = "2026-03-29T17:44:00"
@@ -1232,7 +1187,10 @@ class TradeExecutor:
 _learn_fn = None
 _learn_db = None
 try:
-    from learning_engine import upgrade_db, analyze_and_tune
+    try:
+        from learning_engine import upgrade_db, analyze_and_tune
+    except ImportError:
+        from src.engine.learning_engine import upgrade_db, analyze_and_tune
     _learn_db = upgrade_db()
     _learn_fn = analyze_and_tune
     log.info("Learning engine loaded")
@@ -1327,7 +1285,7 @@ async def _trade_wrapper(session, executor, sig, bal, active_addrs, db,
 
 
 async def main():
-    _apply_startup_config_overrides()
+    apply_startup_config_overrides(DB_PATH, CFG, log)
 
     log.info("=" * 60)
     log.info("  Lazarus v3.0 — Target: $20,000")
