@@ -3,7 +3,7 @@
 **Date:** 2026-04-30
 **Author:** Josh Hillard (TPM #4), DevOps #6 lead, with SecOps #2 / SRE #1 review
 **Sprint:** Phase 3 (Apr 25–May 7), slice 2 of 3
-**Predecessor:** [deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md](../../../deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md) (slice 1)
+**Predecessor:** [deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md](../../deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md) (slice 1)
 **Status:** Repo-built (not yet deployed; integration with `lazarus.py` main loop is slice 3)
 
 ---

@@ -1,0 +1,19 @@
+# Binary exports — source of truth lives in the markdown originals.
+# Re-generate from .md when needed (Pandoc, Word/PPT export, etc.).
+*.pdf
+*.pptx
+*.docx
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor/swap files
+*.swp
+*.swo
+*~
+
+# Local backups
+*.bak
+*.backup
