@@ -5,7 +5,7 @@
 **Author:** Josh Hillard (TPM #4)
 **Personas:** SecOps #2 (lead), DevOps #6, SRE #1
 **Predecessor:** [docs/build-log/2026-04-30-phase3-slice2-dispatcher.md](2026-04-30-phase3-slice2-dispatcher.md)
-**Companion ADR:** [deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md](../../../deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md) (ADR-006)
+**Companion ADR:** [deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md](../../deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md) (ADR-006)
 **Status:** Repo-built. Deployment pending operator action (Cloud Run secret unbind).
 
 ---

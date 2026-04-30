@@ -181,7 +181,7 @@ The "3-place config" rule (from incident 2026-03-28) requires values to be consi
 ## 8. ADR-006 Update — TAX_VAULT_KEY is Forbidden on the Trading Server (2026-04-30)
 
 **Build log:** [docs/build-log/2026-04-30-adr006-vault-split.md](build-log/2026-04-30-adr006-vault-split.md)
-**ADR:** [deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md](../../deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md) (ADR-006)
+**ADR:** [deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md](../deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md) (ADR-006)
 
 **The earlier guidance in section 1 of this document is superseded for `TAX_VAULT_KEY` only.** Per ADR-006, the tax vault private key must NEVER be present on the trading server — neither in `.env`, nor in process memory, nor as a Cloud Run secret bound to the lazarus service.
 
