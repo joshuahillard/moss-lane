@@ -288,3 +288,23 @@ Blocker class: operational integrity (deployment parity), not strategy quality. 
 
 *Tracker maintained by TPM Meta-Persona. Updated at decision checkpoints and evidence resets.*
 *QA Validation Architect signs off on metric trustworthiness before Go-Live.*
+
+---
+
+### Day 11 — 2026-04-24 — Sprint 7 restart event and Gate 7A verdict under strict charter
+
+- **Runtime event:** Lazarus restarted cleanly at `2026-04-24 06:17:16 UTC`. Clean systemd shutdown; no crash, no OOM. `fail2ban-client: Shutdown successful` at `06:17:17 UTC` suggests a system-level event; `unattended-upgrades` is a plausible inference but is not directly logged in the inspected window.
+- **Gate 7A cutoff:** resets per charter §150. New cutoff of record: `2026-04-24 06:17:16 UTC`. The prior `2026-04-16 18:13:33 UTC` cutoff is retired.
+- **Audit-gap note:** no checkpoint entries were made between 2026-04-17 and 2026-04-24 (~8 days). The gap is acknowledged, not reconstructed.
+- **Six-check scorecard under strict charter:**
+  - Check 1 (bot_config) — **PASS**: 7/7 keys match `original` (`min_hourly_vol=400`, `min_chg_pct=10.0`, `max_chg_pct=80.0`, `min_liq=50000`, `min_vmr=0.10`, `cooldown_seconds=7200`, `filter_regime=original`).
+  - Check 2 (dynamic_config) — **PASS**: SELECT on the seven gate keys returned zero rows; only `position_pct=0.15` and `stop_loss=0.94` are present (outside the filter set).
+  - Check 3 (deployed `lazarus.py` CFG literal) — **FAIL**: 4 of 7 keys still at `v3.2_lowvol_epoch` values on deployed `/home/solbot/lazarus/lazarus.py` (vol 250, chg 120.0, liq 30_000, regime `v3.2_lowvol_epoch`). `apply_startup_config_overrides` masks the drift at runtime but does not satisfy the charter's code-layer check.
+  - Check 4 (`config_defaults.py` DEFAULTS) — **FAIL**: no `config_defaults.py` and no `.git` working tree found on the searched `/home/solbot` server surface.
+  - Check 5 (startup banner / runtime re-logs) — **PASS**: banner plus 26 `Runtime filters:` lines (initial line plus 25 re-log samples) all show `original` with no drift.
+  - Check 6 (first post-restart trade tagged `filter_regime='original'`) — **PENDING**: zero post-`06:17:16 UTC` trade rows.
+- **Verdict:** Gate 7A does not close. Two checks FAIL on code-layer alignment; one remains PENDING on the first tagged trade. Sprint 7 stays open; Gate 7B evidence collection remains paused; no sells count toward the 20-sell cohort-of-record target.
+- **Strict-charter adjudication:** the charter-vs-execution-log contradiction on Check 3/4 scope was resolved in favor of the charter. See `docs/sprints/SPRINT_7_EXECUTION_LOG.md` under the `Strict-charter adjudication - 2026-04-24` section for the full ruling.
+- **Next actions (tracked separately):** (1) align deployed `lazarus.py` CFG literal to `original`; (2) port `config_defaults.py` onto the server working tree; (3) wait for the first post-`06:17:16 UTC` trade row and verify its `filter_regime` tag.
+- **Evidence location:** `docs/sprints/SPRINT_7_EXECUTION_LOG.md` under `Gate 7A.F4.R1` and `Gate 7A.F4.R1.V1`.
+- **Next tracker edit:** Sprint 7 close-out only.
