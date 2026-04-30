@@ -37,29 +37,20 @@ init). Both fail-closed: any ambiguity raises rather than degrades.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Protocol, Set
 
+# TopologyError + validate_no_keys_in_env live in src/utils/topology.py.
+# Re-imported here so existing callers (`from route_trade import TopologyError`,
+# `from route_trade import validate_no_keys_in_env`) continue to resolve.
+try:
+    from topology import TopologyError, validate_no_keys_in_env
+except ImportError:
+    from src.utils.topology import TopologyError, validate_no_keys_in_env
+
 log = logging.getLogger("dispatcher.route_trade")
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# Public errors
-# ════════════════════════════════════════════════════════════════════════════
-
-class TopologyError(Exception):
-    """
-    Raised when capital-flow topology invariants would be violated.
-
-    Examples:
-      - executor address overlaps the vault address (ADR-006)
-      - executor address overlaps the main wallet address (ADR-005)
-      - executor pool is empty (no homogeneous burner fleet to route into)
-      - duplicate executor address (ambiguous routing target)
-    """
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -183,68 +174,7 @@ def validate_topology(
         )
 
 
-def validate_no_keys_in_env(
-    env: Optional[Dict[str, str]] = None,
-    *,
-    forbidden_suffixes: Optional[List[str]] = None,
-) -> None:
-    """
-    Enforce ADR-007: the dispatcher process must not have any signing
-    keypair loadable from its environment.
-
-    This is a structural check, not a heuristic. Callers should invoke
-    this at process startup; it raises TopologyError if any forbidden
-    key is present so the process refuses to start.
-
-    Args:
-        env: Mapping to check. Defaults to os.environ.
-        forbidden_suffixes: Substring patterns that mark a value as a
-            signing key. Defaults to a Moss-Lane-specific list:
-            ("_KEY", "_PRIVATE_KEY", "_SECRET").
-
-    Raises:
-        TopologyError: if any matching env var is present and non-empty.
-
-    Notes:
-        - We deliberately match by *variable name suffix*, not by attempting
-          to parse the value with solders.Keypair.from_bytes. The dispatcher
-          should not import solders at all (defense in depth — no signing
-          library means no signing path).
-        - TAX_VAULT_KEY is the canonical forbidden var. EXEC_WALLET_N_KEY
-          and MAIN_WALLET_KEY are also forbidden in the dispatcher env.
-        - PUBLIC_KEY-suffixed vars are explicitly allowed; we check for
-          private-key markers only.
-    """
-    if env is None:
-        env = dict(os.environ)
-
-    if forbidden_suffixes is None:
-        forbidden_suffixes = ["_KEY", "_PRIVATE_KEY", "_SECRET"]
-
-    # Whitelist substrings that should NOT be flagged even if they end in _KEY
-    # (e.g., API endpoint names). Conservative: anything with PUBLIC, ADDRESS,
-    # API, or URL in the name is treated as non-signing.
-    allowed_substrings = {"PUBLIC", "ADDRESS", "API", "URL", "ENDPOINT", "PATH"}
-
-    offenders: List[str] = []
-    for var_name, value in env.items():
-        if not value:
-            continue
-        upper_name = var_name.upper()
-        if any(allowed in upper_name for allowed in allowed_substrings):
-            continue
-        for suffix in forbidden_suffixes:
-            if upper_name.endswith(suffix.upper()):
-                offenders.append(var_name)
-                break
-
-    if offenders:
-        raise TopologyError(
-            "dispatcher process has forbidden signing-key env vars: "
-            f"{sorted(offenders)} — ADR-007 requires zero keys. Move "
-            "signing material to the burner-process env (and TAX_VAULT_KEY "
-            "off-server entirely per ADR-006)."
-        )
+# validate_no_keys_in_env now lives in src/utils/topology.py (re-imported above).
 
 
 # ════════════════════════════════════════════════════════════════════════════

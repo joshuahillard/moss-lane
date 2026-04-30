@@ -58,3 +58,19 @@ desktop.ini
 
 # Local scripts
 push_to_github.sh
+
+# Wallet keypair files (Solana CLI default location patterns) — ADR-006 vault
+# private key must never be committed; defensive patterns catch common names.
+*.keypair.json
+*-keypair.json
+keypair*.json
+id_*
+
+# Environment backups beyond the existing .env.* coverage
+*.env.bak
+*.env.backup
+
+# Editor/swap files
+*.swp
+*.swo
+*~

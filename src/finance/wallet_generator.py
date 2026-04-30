@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 """
-Solana Wallet Generation Module for Lazarus Trading Bot - Phase 2 Multi-Wallet Dispatcher
+Solana Wallet Generation Module for Lazarus Trading Bot — BURNERS ONLY
 
-Generates and manages 5 execution wallets + 1 tax vault wallet for the Lazarus bot.
-Uses solders library for keypair generation and base58 encoding for private key storage.
+Generates and manages the 5 execution wallets (burners) for the Lazarus bot.
+
+ADR-006 (deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md): the tax vault
+keypair is NOT generated here and never written to the server `.env`. Vault
+keypair generation is operator-side only — see src/finance/vault_keygen.py.
+This module's `save_wallets_to_env` rejects any TAX_VAULT_KEY entry as a
+defense-in-depth check.
+
+Uses solders library for keypair generation and base58 encoding for private
+key storage.
 
 3-Layer Config Hierarchy:
 1. Code defaults: WALLET_COUNT=5, allocation percentages
@@ -11,8 +19,7 @@ Uses solders library for keypair generation and base58 encoding for private key 
 3. dynamic_config: future learning engine adjustments (placeholder)
 
 Author: Lazarus Team
-Version: 1.0.0
-Date: 2026-03-31
+Date: 2026-03-31 (split into burners-only path 2026-04-29)
 """
 
 import os
@@ -54,108 +61,21 @@ ALLOCATION_PERCENTAGES = {
     "EXEC_WALLET_3": 0.20,
     "EXEC_WALLET_4": 0.20,
     "EXEC_WALLET_5": 0.20,
-    "TAX_VAULT": 0.00,  # Tax vault held separately, not included in trading allocation
 }
 
 ENV_FILE_PATH = "/home/solbot/lazarus/.env"
 
 
 # ============================================================================
-# EnvLoader: Custom .env Handler (NEVER python-dotenv)
+# EnvLoader: imported from src/utils/env_loader.py
 # ============================================================================
+# Custom .env handler lives in src/utils/env_loader.py (CLAUDE.md rule 3).
+# Dual-import to support both deployed (flat) and repo-test (qualified) paths.
 
-class EnvLoader:
-    """
-    Custom environment loader that safely handles quoted values in .env files.
-    Avoids python-dotenv which breaks on certain quote formats.
-    """
-
-    @staticmethod
-    def load(env_path: str) -> Dict[str, str]:
-        """
-        Load all key=value pairs from .env file into a dict.
-        Handles quoted values correctly.
-
-        Args:
-            env_path: Path to .env file
-
-        Returns:
-            Dictionary of environment variables
-        """
-        env_vars = {}
-        if not os.path.exists(env_path):
-            logger.warning(f"ENV file not found: {env_path}")
-            return env_vars
-
-        try:
-            with open(env_path, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    # Skip comments and empty lines
-                    if not line or line.startswith('#'):
-                        continue
-
-                    if '=' not in line:
-                        continue
-
-                    key, value = line.split('=', 1)
-                    key = key.strip()
-                    value = value.strip()
-
-                    # Remove surrounding quotes if present
-                    if (value.startswith('"') and value.endswith('"')) or \
-                       (value.startswith("'") and value.endswith("'")):
-                        value = value[1:-1]
-
-                    env_vars[key] = value
-
-            logger.info(f"Loaded {len(env_vars)} variables from {env_path}")
-        except Exception as e:
-            logger.error(f"Failed to load .env file: {e}")
-            raise
-
-        return env_vars
-
-    @staticmethod
-    def write(env_path: str, updates: Dict[str, str], backup: bool = True) -> None:
-        """
-        Append new key=value pairs to .env file (or update existing keys).
-        Creates file if it doesn't exist. Optionally backs up original.
-
-        Args:
-            env_path: Path to .env file
-            updates: Dictionary of key=value pairs to add/update
-            backup: If True, create backup of original .env before writing
-        """
-        # Backup existing file if it exists
-        if backup and os.path.exists(env_path):
-            backup_path = f"{env_path}.backup"
-            try:
-                with open(env_path, 'r') as src:
-                    with open(backup_path, 'w') as dst:
-                        dst.write(src.read())
-                logger.info(f"Backed up .env to {backup_path}")
-            except Exception as e:
-                logger.error(f"Failed to backup .env: {e}")
-                raise
-
-        # Load existing content
-        existing = {}
-        if os.path.exists(env_path):
-            existing = EnvLoader.load(env_path)
-
-        # Merge updates
-        existing.update(updates)
-
-        # Write all key=value pairs (overwrite file)
-        try:
-            with open(env_path, 'w') as f:
-                for key, value in existing.items():
-                    f.write(f"{key}={value}\n")
-            logger.info(f"Wrote {len(updates)} new/updated variables to {env_path}")
-        except Exception as e:
-            logger.error(f"Failed to write .env file: {e}")
-            raise
+try:
+    from env_loader import EnvLoader
+except ImportError:
+    from src.utils.env_loader import EnvLoader
 
 
 # ============================================================================
@@ -174,9 +94,8 @@ class WalletConfig:
 
 @dataclass
 class WalletSet:
-    """Complete set of execution + tax vault wallets."""
+    """Complete set of execution (burner) wallets. ADR-006: tax vault not included."""
     execution_wallets: List[WalletConfig]
-    tax_vault: WalletConfig
     generated_at: str
 
 
@@ -203,7 +122,6 @@ WALLET-SPECIFIC ROWS:
 - config_key='EXEC_WALLET_1_ALLOCATION', config_value='0.20', config_type='float'
 - config_key='EXEC_WALLET_2_ALLOCATION', config_value='0.20', config_type='float'
 - ... (WALLET_3 through WALLET_5)
-- config_key='TAX_VAULT_ALLOCATION', config_value='0.00', config_type='float'
 
 Runtime flow:
 1. Load code defaults (WALLET_COUNT=5, allocations)
@@ -264,15 +182,18 @@ def generate_keypair() -> Tuple[str, str]:
 
 def generate_wallets(wallet_count: int = WALLET_COUNT) -> WalletSet:
     """
-    Generate execution wallets + tax vault.
+    Generate execution (burner) wallets only.
+
+    ADR-006: tax vault keypair generation lives in src/finance/vault_keygen.py
+    and runs operator-side, not on the trading server.
 
     Args:
         wallet_count: Number of execution wallets to generate (default: 5)
 
     Returns:
-        WalletSet object containing all generated wallets
+        WalletSet object containing only execution wallets
     """
-    logger.info(f"Generating {wallet_count} execution wallets + 1 tax vault...")
+    logger.info(f"Generating {wallet_count} execution wallets (burners only)...")
 
     execution_wallets = []
     for i in range(1, wallet_count + 1):
@@ -290,42 +211,60 @@ def generate_wallets(wallet_count: int = WALLET_COUNT) -> WalletSet:
         execution_wallets.append(wallet)
         logger.info(f"  Generated EXEC_WALLET_{i}: {pubkey[:8]}...")
 
-    # Generate tax vault
-    pubkey, privkey_b58 = generate_keypair()
-    tax_vault = WalletConfig(
-        name="TAX_VAULT",
-        pubkey=pubkey,
-        private_key_base58=privkey_b58,
-        env_var_name="TAX_VAULT_KEY",
-        allocation_pct=ALLOCATION_PERCENTAGES.get("TAX_VAULT", 0.0)
-    )
-    logger.info(f"  Generated TAX_VAULT: {pubkey[:8]}...")
-
     from datetime import datetime
     wallet_set = WalletSet(
         execution_wallets=execution_wallets,
-        tax_vault=tax_vault,
         generated_at=datetime.utcnow().isoformat()
     )
 
-    logger.info(f"Successfully generated {wallet_count} execution wallets + 1 tax vault")
+    logger.info(f"Successfully generated {wallet_count} execution wallets")
     return wallet_set
+
+
+_ADR006_VAULT_KEY_ERROR = (
+    "ADR-006 violation: TAX_VAULT_KEY must not be written to server .env. "
+    "Vault private key is operator-controlled, off-server. "
+    "See deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md."
+)
+
+
+def _assert_no_vault_key_in_env_updates(env_updates: Dict[str, str]) -> None:
+    """
+    Defense-in-depth guard: refuse to write TAX_VAULT_KEY to server .env.
+
+    Case-insensitive — TAX_VAULT_KEY, Tax_Vault_Key, tax_vault_key all rejected.
+
+    Raises:
+        ValueError: if env_updates contains any TAX_VAULT_KEY variant.
+    """
+    for key in env_updates:
+        if key.upper() == "TAX_VAULT_KEY":
+            raise ValueError(_ADR006_VAULT_KEY_ERROR)
 
 
 def save_wallets_to_env(wallet_set: WalletSet, env_path: str = ENV_FILE_PATH) -> None:
     """
-    Save wallet private keys to .env file using EnvLoader.
+    Save burner wallet private keys to .env file using EnvLoader.
+
+    ADR-006: refuses to write TAX_VAULT_KEY. The vault private key never
+    touches the server `.env`; only TAX_VAULT_ADDRESS (the public address)
+    is provisioned to the trading server, by the operator, after running
+    src/finance/vault_keygen.py off-server.
 
     Args:
-        wallet_set: WalletSet object with all wallets
+        wallet_set: WalletSet object with execution wallets only
         env_path: Path to .env file
+
+    Raises:
+        ValueError: if any key in the resolved env_updates dict is
+            TAX_VAULT_KEY (case-insensitive).
     """
-    env_updates = {}
+    env_updates: Dict[str, str] = {}
 
     for wallet in wallet_set.execution_wallets:
         env_updates[wallet.env_var_name] = wallet.private_key_base58
 
-    env_updates[wallet_set.tax_vault.env_var_name] = wallet_set.tax_vault.private_key_base58
+    _assert_no_vault_key_in_env_updates(env_updates)
 
     EnvLoader.write(env_path, env_updates, backup=True)
     logger.info(f"Saved {len(env_updates)} private keys to {env_path}")
@@ -333,24 +272,26 @@ def save_wallets_to_env(wallet_set: WalletSet, env_path: str = ENV_FILE_PATH) ->
 
 def load_wallets_from_env(env_path: str = ENV_FILE_PATH) -> Dict[str, str]:
     """
-    Load existing wallet private keys from .env file.
+    Load existing burner wallet private keys from .env file.
+
+    ADR-006: only EXEC_WALLET_*_KEY entries are loaded. TAX_VAULT_KEY
+    is forbidden on the server; the startup assertion in
+    src/data/data_integrity.py::assert_vault_topology fails closed
+    if it is present.
 
     Args:
         env_path: Path to .env file
 
     Returns:
-        Dictionary mapping env_var_name -> private_key_base58
+        Dictionary mapping env_var_name -> private_key_base58 (burners only)
     """
     env_vars = EnvLoader.load(env_path)
 
-    wallet_keys = {}
+    wallet_keys: Dict[str, str] = {}
     for i in range(1, WALLET_COUNT + 1):
         key_name = f"EXEC_WALLET_{i}_KEY"
         if key_name in env_vars:
             wallet_keys[key_name] = env_vars[key_name]
-
-    if "TAX_VAULT_KEY" in env_vars:
-        wallet_keys["TAX_VAULT_KEY"] = env_vars["TAX_VAULT_KEY"]
 
     logger.info(f"Loaded {len(wallet_keys)} private keys from {env_path}")
     return wallet_keys
@@ -406,12 +347,6 @@ def verify_all_wallets(wallet_set: WalletSet) -> bool:
         else:
             logger.info(f"  ✓ {wallet.name} verified")
 
-    if not verify_wallet_validity(wallet_set.tax_vault.private_key_base58, wallet_set.tax_vault.pubkey):
-        logger.error("Verification failed for TAX_VAULT")
-        all_valid = False
-    else:
-        logger.info(f"  ✓ TAX_VAULT verified")
-
     return all_valid
 
 
@@ -443,15 +378,6 @@ def verify_env_wallets(env_path: str = ENV_FILE_PATH) -> bool:
         else:
             logger.info(f"  ✓ {key_name} verified")
 
-    if "TAX_VAULT_KEY" not in env_vars:
-        logger.warning("Missing TAX_VAULT_KEY in .env")
-        all_valid = False
-    elif not verify_wallet_validity(env_vars["TAX_VAULT_KEY"]):
-        logger.error("Verification failed for TAX_VAULT_KEY")
-        all_valid = False
-    else:
-        logger.info(f"  ✓ TAX_VAULT_KEY verified")
-
     return all_valid
 
 
@@ -475,8 +401,6 @@ def log_wallet_summary(wallet_set: WalletSet) -> None:
         logger.info(f"{wallet.name:20} | {wallet.pubkey} | Allocation: {wallet.allocation_pct:.1%}")
         total_allocation += wallet.allocation_pct
 
-    logger.info(f"{'TAX_VAULT':20} | {wallet_set.tax_vault.pubkey} | Allocation: {wallet_set.tax_vault.allocation_pct:.1%}")
-
     logger.info("=" * 80)
     logger.info(f"Total Trading Allocation: {total_allocation:.1%}")
     logger.info(f"Generated At: {wallet_set.generated_at}")
@@ -495,7 +419,7 @@ def get_wallet_pubkey(wallet_name: str, env_path: str = ENV_FILE_PATH) -> Option
     Used by lazarus.py engine.
 
     Args:
-        wallet_name: Name of wallet (e.g., 'EXEC_WALLET_1', 'TAX_VAULT')
+        wallet_name: Name of wallet (e.g., 'EXEC_WALLET_1')
         env_path: Path to .env file
 
     Returns:
@@ -523,7 +447,7 @@ def get_wallet_keypair(wallet_name: str, env_path: str = ENV_FILE_PATH) -> Optio
     Used by lazarus.py engine for transaction signing.
 
     Args:
-        wallet_name: Name of wallet (e.g., 'EXEC_WALLET_1', 'TAX_VAULT')
+        wallet_name: Name of wallet (e.g., 'EXEC_WALLET_1')
         env_path: Path to .env file
 
     Returns:

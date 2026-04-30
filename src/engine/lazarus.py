@@ -49,6 +49,7 @@ try:
         validate_epoch_query, validate_startup_config,
         check_data_anomalies, V31_EPOCH, PARAM_BOUNDS,
     )
+    from data_integrity import assert_vault_topology  # ADR-006 vault topology guard
     _DI = True
 except ImportError:
     _DI = False
@@ -1223,14 +1224,9 @@ _tax_vault = None
 if CFG["dispatcher_enabled"]:
     try:
         from tax_vault import TaxVault, TaxVaultConfig
-        _tv_addr = ""
-        _tv_key = ENV.get("TAX_VAULT_KEY", "")
-        if _tv_key:
-            try:
-                _tv_kp = Keypair.from_base58_string(_tv_key)
-                _tv_addr = str(_tv_kp.pubkey())
-            except Exception as e:
-                log.warning(f"Invalid TAX_VAULT_KEY: {e}")
+        # ADR-006: vault private key is operator-controlled, off-server.
+        # Read TAX_VAULT_ADDRESS (public) directly; never derive from a key here.
+        _tv_addr = ENV.get("TAX_VAULT_ADDRESS", "").strip()
         if _tv_addr:
             _tax_vault = TaxVault(
                 TaxVaultConfig(tax_vault_address=_tv_addr),
@@ -1238,7 +1234,7 @@ if CFG["dispatcher_enabled"]:
             )
             log.info(f"TaxVault loaded: vault={_tv_addr[:12]}...")
         else:
-            log.warning("TAX_VAULT_KEY not configured — tax vault disabled")
+            log.warning("TAX_VAULT_ADDRESS not configured — tax vault disabled")
     except Exception as e:
         log.warning(f"TaxVault not available: {e}")
 
@@ -1326,6 +1322,18 @@ async def main():
             raise
         except Exception as e:
             log.warning(f"[STARTUP] Assertion check error (non-fatal): {e}")
+        # ADR-006: fatal on TAX_VAULT_KEY presence or TAX_VAULT_ADDRESS absence.
+        # Logged in the existing [STARTUP] FAIL style for parity with validate_startup_config.
+        try:
+            assert_vault_topology()
+            log.info("[STARTUP] OK: ADR-006 vault topology")
+        except Exception as e:
+            log.critical("[STARTUP] ASSERTION FAILED: ADR-006 vault topology violation")
+            for line in str(e).splitlines():
+                log.critical(f"[STARTUP]   FAIL: {line}")
+            log.critical("[STARTUP] Lazarus will NOT start until this is resolved.")
+            import sys
+            sys.exit(1)
     else:
         log.warning("[STARTUP] data_integrity not available — skipping startup assertions")
 
