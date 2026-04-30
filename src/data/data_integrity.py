@@ -23,8 +23,20 @@ INCIDENT COVERAGE:
   - Learning Engine Overwrite → Layer 3
 """
 
-import re
+import logging
 import math
+import os
+import re
+from typing import Dict, Optional
+
+# Topology primitives (TopologyError + env scanner) live in src/utils/topology.py
+# so both data_integrity and dispatcher import from a single source of truth.
+try:
+    from topology import TopologyError, validate_no_keys_in_env
+except ImportError:
+    from src.utils.topology import TopologyError, validate_no_keys_in_env
+
+_log = logging.getLogger("data_integrity")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS
@@ -361,6 +373,88 @@ def validate_startup_config(bot_config, dynamic_config, epoch=V31_EPOCH):
     return {"valid": True,
             "reason": f"all {len(passed)} startup checks passed",
             "details": {"checks_passed": passed, "checks_failed": []}}
+
+
+# ── ADR-006 Vault Topology Assertion (extends Layer 4) ────────────────────────
+
+_VAULT_ADDRESS_MISSING_MSG = (
+    "P0 ADR-006: TAX_VAULT_ADDRESS missing or empty in server environment.\n"
+    "The receive destination for skims must be configured before the\n"
+    "service can start.\n\n"
+    "REMEDIATION:\n"
+    "(1) On an offline operator machine with MOSS_LANE_OPERATOR_MACHINE=true:\n"
+    "      python -m src.finance.vault_keygen\n"
+    "    Record the printed public + private key on offline encrypted storage.\n\n"
+    "(2) On this server, add the printed TAX_VAULT_ADDRESS line to\n"
+    "    /home/solbot/lazarus/.env (do NOT add TAX_VAULT_KEY).\n\n"
+    "(3) Restart the service.\n\n"
+    "Reference: deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md (ADR-006)"
+)
+
+_VAULT_KEY_ROTATION_MSG = (
+    "P0 ADR-006 VIOLATION: TAX_VAULT_KEY found in server environment.\n"
+    "Vault private key must not be on this server.\n\n"
+    "ROTATION PROCEDURE (mandatory before service can start):\n\n"
+    "(1) On an offline operator machine with MOSS_LANE_OPERATOR_MACHINE=true:\n"
+    "      python -m src.finance.vault_keygen\n"
+    "    Record the printed public + private key on offline encrypted storage.\n\n"
+    "(2) If the OLD vault has accumulated SOL, drain it from a clean operator\n"
+    "    machine:\n"
+    "      solana transfer --from <old-vault-keypair-file> "
+    "--keypair <old-vault-keypair-file> \\\n"
+    "        <new-vault-public-address> ALL --allow-unfunded-recipient\n"
+    "    If the old vault is empty, skip this step. If RPC is unreachable,\n"
+    "    retry until it succeeds — do not proceed to step 3 with funds left\n"
+    "    in the old vault.\n\n"
+    "(3) On this server, edit /home/solbot/lazarus/.env:\n"
+    "      - Update TAX_VAULT_ADDRESS to the new vault public address.\n"
+    "      - REMOVE the TAX_VAULT_KEY line entirely (do not blank it; remove\n"
+    "        the line).\n\n"
+    "(4) Restart the service. This assertion will now pass.\n\n"
+    "Reference: deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md (ADR-006)\n"
+    "Build log:  github-repo/docs/build-log/2026-04-30-adr006-vault-split.md"
+)
+
+
+def assert_vault_topology(env: Optional[Dict[str, str]] = None) -> None:
+    """
+    ADR-006 startup assertion (extends Layer 4): refuse to start if the
+    vault topology is misconfigured.
+
+    Enforces:
+      (a) TAX_VAULT_ADDRESS is present and non-empty in env.
+      (b) TAX_VAULT_KEY is absent or empty in env.
+
+    The env scan for (b) is delegated to
+    src/dispatcher/route_trade.py::validate_no_keys_in_env so the
+    suffix-list logic exists in exactly one place.
+
+    Args:
+        env: Mapping to check. Defaults to os.environ.
+
+    Raises:
+        TopologyError: If TAX_VAULT_ADDRESS is missing, OR if TAX_VAULT_KEY
+            is loadable from the environment. The error message includes
+            the operator-facing rotation procedure.
+    """
+    if env is None:
+        env = dict(os.environ)
+
+    # (a) TAX_VAULT_ADDRESS must be present and non-empty
+    if not env.get("TAX_VAULT_ADDRESS", "").strip():
+        _log.critical(_VAULT_ADDRESS_MISSING_MSG)
+        raise TopologyError(_VAULT_ADDRESS_MISSING_MSG)
+
+    # (b) TAX_VAULT_KEY must not be loadable — delegate the env scan to
+    # the dispatcher's validator. We intentionally pass a narrowed
+    # forbidden_suffixes list so only the vault key triggers (the broader
+    # *_KEY scan in route_trade is for the dispatcher process; lazarus
+    # legitimately holds EXEC_WALLET_*_KEY and SOLANA_PRIVATE_KEY).
+    try:
+        validate_no_keys_in_env(env, forbidden_suffixes=["TAX_VAULT_KEY"])
+    except TopologyError as inner:
+        _log.critical(_VAULT_KEY_ROTATION_MSG)
+        raise TopologyError(_VAULT_KEY_ROTATION_MSG) from inner
 
 
 # ══════════════════════════════════════════════════════════════════════════════

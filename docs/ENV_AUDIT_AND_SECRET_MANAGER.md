@@ -175,3 +175,58 @@ The "3-place config" rule (from incident 2026-03-28) requires values to be consi
 5. Run `migrate_sqlite_to_pg.py` to seed schema
 6. Deploy new image with updated entrypoint.sh
 7. Verify /health endpoint reports `"backend": "postgres"` and healthy
+
+---
+
+## 8. ADR-006 Update — TAX_VAULT_KEY is Forbidden on the Trading Server (2026-04-30)
+
+**Build log:** [docs/build-log/2026-04-30-adr006-vault-split.md](build-log/2026-04-30-adr006-vault-split.md)
+**ADR:** [deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md](../../deliverables/ADR_Multi_Wallet_Topology_2026-04-29.md) (ADR-006)
+
+**The earlier guidance in section 1 of this document is superseded for `TAX_VAULT_KEY` only.** Per ADR-006, the tax vault private key must NEVER be present on the trading server — neither in `.env`, nor in process memory, nor as a Cloud Run secret bound to the lazarus service.
+
+This inverts the prior treatment of `TAX_VAULT_KEY` (section 1 still lists it as a Secret Manager item to provision; that row is **historically accurate as of 2026-04-08 but is now obsolete**). Future doc-cleanup slice will rewrite section 1; in the meantime, this section is authoritative for `TAX_VAULT_KEY`.
+
+### New invariant (in code)
+
+A startup assertion at [src/data/data_integrity.py::assert_vault_topology](../src/data/data_integrity.py) refuses to start the service if `TAX_VAULT_KEY` is loadable from the environment, OR if `TAX_VAULT_ADDRESS` is missing. The assertion is invoked from [src/engine/lazarus.py](../src/engine/lazarus.py) in the existing Layer-4 startup-assertion block.
+
+A deploy-time guard at [entrypoint.sh:60-74](../entrypoint.sh) aborts the container if `TAX_VAULT_KEY` is in the Cloud Run-injected env, giving a faster crash loop and a cleaner shell-level error than the Python assertion alone.
+
+### What goes on the server
+
+| Variable | Status |
+|---|---|
+| `TAX_VAULT_ADDRESS` | **Required.** Public address of the tax vault. Bridged by entrypoint.sh; read by lazarus.py to construct `TaxVaultConfig`. Plain env var on Cloud Run (or non-sensitive secret) — not a private key. |
+| `TAX_VAULT_KEY` | **FORBIDDEN.** Refusing-to-start invariant. If present, see rotation procedure in the build log. |
+
+### What goes off the server (operator side)
+
+The vault private key is generated on a clean operator machine via:
+
+```bash
+export MOSS_LANE_OPERATOR_MACHINE=true
+python -m src.finance.vault_keygen
+```
+
+The script prints the keypair once to stdout and never persists it. The operator records the private key on offline encrypted storage (laptop encrypted disk + offline backup; or hardware wallet). The script's reverse guard refuses to run on any machine that smells like the trading server (burner keys present, `/home/solbot/lazarus/` exists, or the allow-list flag is missing).
+
+### Rotation procedure for existing deployments
+
+If this server currently has `TAX_VAULT_KEY` in its `.env` or as a Cloud Run secret, follow [build log section (e)](build-log/2026-04-30-adr006-vault-split.md) before restarting the service. Mandatory steps:
+
+1. Generate a new vault keypair on a clean operator machine.
+2. Drain the old vault to the new vault (if old vault has SOL).
+3. Edit `/home/solbot/lazarus/.env`: update `TAX_VAULT_ADDRESS`, REMOVE the `TAX_VAULT_KEY` line entirely.
+4. Unbind the Cloud Run secret: `gcloud run services update lazarus --remove-secrets=TAX_VAULT_KEY`.
+5. Bind `TAX_VAULT_ADDRESS` as a plain env var or non-sensitive secret.
+6. Restart the service. Assertion will pass; `[STARTUP] OK: ADR-006 vault topology` appears in logs.
+
+### Defense layers (after this change)
+
+1. **Code-review guard:** [tests/unit/test_vault_topology_guards.py::test_no_tax_vault_key_writes_in_src](../tests/unit/test_vault_topology_guards.py) AST-walks src/ at CI time and fails any function body that pairs a literal `TAX_VAULT_KEY` string with a disk-write call.
+2. **Runtime startup assertion:** `assert_vault_topology` in `src/data/data_integrity.py` fails closed at every startup.
+3. **Deploy guard:** `entrypoint.sh:60-74` aborts container start if the env var is injected.
+4. **Operator-side reverse guard:** `vault_keygen.py` refuses to generate a vault key on a machine that holds burner keys or has the server filesystem layout.
+
+Reintroduction of the vulnerability requires defeating all four. Section 1 of this document (the historical TAX_VAULT_KEY row) is superseded by this section.
