@@ -243,3 +243,18 @@ Sprint 7 closes when one of these is true:
 - Hard-stop condition triggered (PF < 1.0 at N ≥ 10 on the cohort-of-record, or both cohorts starved) → sprint closes with a named negative result. That is still decision-grade information.
 
 Sprint 7 does not close by silent fade. It closes by an explicit decision recorded in this file.
+
+---
+
+## Appendix - Gate 7A scope adjudication (2026-04-24)
+
+A charter-vs-execution-log scope contradiction was identified during the 2026-04-24 audit:
+
+- Charter (this file, lines 96-97): repo/default alignment is part of Gate 7A, not a separate follow-up.
+- Execution log (`docs/sprints/SPRINT_7_EXECUTION_LOG.md:43`, Gate 7A.F3 parity-restoration note): `config_defaults.py was not deployed to the VPS runtime path; repo/default alignment remains a separate repo concern.`
+
+The F3 note, read strictly, removes Check 4 from Gate 7A. The charter keeps it in.
+
+**Adjudication on 2026-04-24:** the charter governs. Checks 3 and 4 apply in full on the server working tree. The F3 note stands as historical record of Phase F3's scope of work (what was synced during parity restoration), not as a modifier of Gate 7A's close-out condition.
+
+Operational consequence: Gate 7A is not closed on 2026-04-24. A service restart at `2026-04-24 06:17:16 UTC` retired the prior `2026-04-16 18:13:33 UTC` cutoff. The full re-verification under the new cutoff is recorded in `docs/sprints/SPRINT_7_EXECUTION_LOG.md` under `Gate 7A.F4.R1` and `Gate 7A.F4.R1.V1`. Two code-layer checks (3 and 4) FAIL; Check 6 remains PENDING until the first post-restart trade row lands.

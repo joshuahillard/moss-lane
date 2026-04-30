@@ -90,3 +90,148 @@
 - **Origin parity:** `c500cd2` pushed to `origin/codex/stabilize-20260416`; local and origin in sync.
 - **Interpretation:** Gate 7A remains open. Same interpretation as F4.V1; no new failure signal. `original` regime is selective enough that zero candidates have cleared the funnel in 58 min. Scanner health and regime stability independently re-verified.
 - **Action:** Re-run the post-restart trade-row query at the next checkpoint or immediately upon the first qualifying close. Codex handoff for this gate: `docs/sprints/SPRINT_7_CODEX_HANDOFF_20260416.md`.
+
+## Audit gap - 2026-04-17 through 2026-04-24
+
+- **Span:** approximately 8 days between the last recorded checkpoint (`Gate 7A.F4.V2`, `2026-04-16 19:12 UTC`) and the next verified runtime observation (`2026-04-24 06:17:16 UTC`).
+- **Status:** no checkpoint entries were made in this window. No runtime re-verification, no trade-row query, no scanner-health sample is on file for the gap.
+- **Discipline:** the gap is acknowledged, not reconstructed. Any claim about runtime behavior between 2026-04-17 and 2026-04-24 must be sourced from fresh VPS evidence at the time of inspection, not inferred from the surrounding entries.
+- **Consequence for Gate 7A:** the charter's restart-resets rule still applies. Because a service restart is confirmed at `2026-04-24 06:17:16 UTC` (see `Gate 7A.F4.R1` below), the pre-restart cutoff `2026-04-16 18:13:33 UTC` is retired and Gate 7A re-evaluates against the new cutoff regardless of what happened during the gap.
+
+## Gate 7A.F4.R1 - Service restart 2026-04-24 06:17:16 UTC; Gate 7A cutoff resets
+
+- **Outcome:** the Sprint 7 service was stopped and restarted cleanly at `2026-04-24 06:17:16 UTC`. Per the charter (`SPRINT_7_COHORT_EVIDENCE.md:150`) and the Codex handoff (`SPRINT_7_CODEX_HANDOFF_20260416.md:89`), the Gate 7A cutoff timestamp resets; the F4.V counter resets for this new cutoff.
+- **Pre-shutdown event:** at `2026-04-24 06:17:07 UTC` the learning engine wrote `position_pct=0.15` and `stop_loss=0.94` to `dynamic_config`, based on a 25-trade aggregate (WR=36.0%, avg=$16.9605). These two keys sit outside the seven Gate 7A filter keys; the write does not affect Check 2.
+- **Shutdown signature:** clean systemd stop; 3h 20min 8.453s CPU, 116.1M memory peak; no OOM, no crash. `fail2ban-client: Shutdown successful` at `06:17:17 UTC` suggests a system-level event. `unattended-upgrades` is a plausible inference, but the cause is not directly logged in the inspected window.
+- **New cutoff of record:** `2026-04-24 06:17:16 UTC`. All subsequent Gate 7A evidence is measured against this timestamp.
+
+## Gate 7A.F4.R1.V1 - Six-check ceremony under the new cutoff (strict-charter reading)
+
+This entry re-runs the charter's six Gate 7A checks (`SPRINT_7_COHORT_EVIDENCE.md:128-136`) against the runtime state that emerged from the `2026-04-24 06:17:16 UTC` restart. The strict-charter reading applies: all six checks - including Check 3 (deployed `lazarus.py` CFG) and Check 4 (`config_defaults.py` DEFAULTS) on the server working tree - must pass before Gate 7A closes. See the strict-charter adjudication section below for the scope disposition of the prior F3 note at line 43 of this log.
+
+### Check 1 - bot_config
+
+**Source:** VPS `/home/solbot/lazarus/logs/lazarus.db`, `bot_config` table.
+
+**Query:**
+
+```sql
+SELECT key, value FROM bot_config
+WHERE key IN (
+  'min_hourly_vol', 'min_chg_pct', 'max_chg_pct',
+  'min_liq', 'min_vmr', 'cooldown_seconds', 'filter_regime'
+);
+```
+
+**Output:** 7 rows, all matching the `original` profile exactly:
+
+- `min_hourly_vol=400`
+- `min_chg_pct=10.0`
+- `max_chg_pct=80.0`
+- `min_liq=50000`
+- `min_vmr=0.10`
+- `cooldown_seconds=7200`
+- `filter_regime=original`
+
+**Verdict: PASS.** `bot_config` reflects the `original` profile on all seven gate keys.
+
+### Check 2 - dynamic_config
+
+**Source:** VPS `/home/solbot/lazarus/logs/lazarus.db`, `dynamic_config` table.
+
+**Query:**
+
+```sql
+SELECT key, value FROM dynamic_config
+WHERE key IN (
+  'min_hourly_vol', 'min_chg_pct', 'max_chg_pct',
+  'min_liq', 'min_vmr', 'cooldown_seconds', 'filter_regime'
+);
+```
+
+**Output:** zero rows.
+
+**Startup-echo confirmation:** at `2026-04-24 06:17:16 UTC` the `Startup config` block echoed all seven gate keys sourced from `bot_config`; no `dynamic_config` override was present for any of them. The only rows currently in `dynamic_config` are `position_pct=0.15` and `stop_loss=0.94`, both outside the Gate 7A filter key set.
+
+**Verdict: PASS.** `dynamic_config` holds no override for any of the seven gate keys; the runtime resolves each to its `bot_config` value, which Check 1 has verified aligns to `original`.
+
+### Check 3 - deployed lazarus.py CFG literal
+
+**Source:** deployed `/home/solbot/lazarus/lazarus.py`, CFG dict at lines 141-154.
+
+**Evidence:** grep of the seven gate keys against the deployed file shows drift from `original`:
+
+- `min_hourly_vol`: **250** (expected 400)
+- `min_chg_pct`: 10.0 (matches)
+- `max_chg_pct`: **120.0** (expected 80.0)
+- `min_liq`: **30_000** (expected 50000)
+- `min_vmr`: 0.10 (matches)
+- `filter_regime`: **`v3.2_lowvol_epoch`** (expected `original`)
+- `cooldown_seconds`: 7200 (matches)
+
+`apply_startup_config_overrides` mutates the CFG dict in place at startup by reading `bot_config`, so runtime behavior resolves to the `original` profile despite the deployed literal. Startup banner and runtime re-logs (Check 5) confirm the override is effective.
+
+**Verdict: FAIL.** Four of the seven CFG keys remain at `v3.2_lowvol_epoch` values in the deployed code. Under the strict-charter reading, the override hook does not satisfy Check 3 - the code layer must itself match `original`. Runtime-truth is preserved by the hook, but the drift-prevention surface is not aligned.
+
+### Check 4 - config_defaults.py DEFAULTS alignment
+
+**Source:** VPS `/home/solbot/` directory tree.
+
+**Evidence:** `find /home/solbot -name config_defaults.py` returned no matches within the searched depth. `find /home/solbot -name .git -type d` returned no matches within the searched depth.
+
+**Verdict: FAIL.** No `config_defaults.py` and no `.git` working tree were found on the searched `/home/solbot` server surface. The charter's check 4 cannot be satisfied from the current server evidence.
+
+### Check 5 - startup banner and runtime re-logs
+
+**Source:** `journalctl -u lazarus` from `2026-04-24 06:17:16 UTC` forward.
+
+**Evidence:**
+
+- Startup banner at `06:17:16 UTC`: `Filters: vol >=400 | chg 10.0-80.0% | liq >$50,000 | regime original`
+- 26 `Runtime filters:` lines in the inspected window (initial line at startup plus 25 subsequent re-log samples), all identical to the banner. No drift across the sampled period.
+
+**Verdict: PASS.** Startup banner and every sampled `Runtime filters:` line in the inspected window advertise `original`. No runtime drift observed.
+
+### Check 6 - first post-restart trade tagged `filter_regime='original'`
+
+**Source:** VPS `/home/solbot/lazarus/logs/lazarus.db`, `trades` table.
+
+**Query:**
+
+```sql
+SELECT timestamp, symbol, side, filter_regime
+FROM trades
+WHERE timestamp >= '2026-04-24T06:17:16'
+ORDER BY timestamp ASC
+LIMIT 10;
+```
+
+**Output:** zero rows.
+
+**Verdict: PENDING.** No trade row has been written after the `2026-04-24 06:17:16 UTC` cutoff. Check 6 cannot resolve PASS or FAIL until the first post-restart trade row exists. Until then, Gate 7B remains paused and no sells count toward the 20-sell cohort-of-record target.
+
+### Scorecard
+
+| Check | Verdict |
+|---|---|
+| 1 - bot_config | PASS |
+| 2 - dynamic_config | PASS |
+| 3 - deployed lazarus.py CFG | FAIL |
+| 4 - config_defaults.py DEFAULTS | FAIL |
+| 5 - startup banner / runtime re-logs | PASS |
+| 6 - first-trade tag | PENDING |
+
+**Gate 7A status:** does not close. Two code-layer checks FAIL; one tagged-trade check is PENDING. Sprint 7 remains open under the strict-charter reading.
+
+## Strict-charter adjudication - 2026-04-24
+
+A contradiction existed between two Sprint 7 records:
+
+- The charter (`SPRINT_7_COHORT_EVIDENCE.md:96-97`) explicitly includes repo/default alignment inside Gate 7A ("All three must match. Repo-alignment is part of Gate 7A, not a separate follow-up.").
+- The prior entry at line 43 of this log (under Gate 7A.F3 parity restoration) noted `config_defaults.py was not deployed to the VPS runtime path; repo/default alignment remains a separate repo concern`.
+
+The F3 note, read strictly, removes Check 4 from the gate. The charter treats Check 4 as in-scope.
+
+**Adjudication:** the charter governs. Checks 3 and 4 apply in full on the server working tree. The F3 note stands as historical record of Phase F3's scope of work (what F3 synced during parity restoration) but does not modify the Gate 7A close-out condition.
+
+**Implication for Gate 7A.F4.R1.V1:** Check 3 and Check 4 are evaluated against the strict charter above. Their FAIL verdicts stand. Alignment of the deployed `lazarus.py` CFG literal to `original`, and placement of `config_defaults.py` on the server working tree, are prerequisite work for Gate 7A closure and are out of scope for this block.
